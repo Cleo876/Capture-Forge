@@ -1,0 +1,1039 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CaptureForge - Direct Edition</title>
+    
+    <script>
+        const TOOL_VERSION = '1.3.2';
+    </script>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Google Fonts & Icons -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        /* Base styles */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+            color: #111827;
+            overflow: hidden;
+        }
+
+        /* Dark theme overrides */
+        .dark body {
+            background-color: #111827;
+            color: #f3f4f6;
+        }
+        
+        .dark .bg-white { background-color: #1f2937; }
+        .dark .bg-gray-100 { background-color: #374151; }
+        .dark .text-gray-900 { color: #f9fafb; }
+        .dark .text-gray-700 { color: #d1d5db; }
+        .dark .text-gray-600 { color: #9ca3af; }
+        .dark .text-gray-500 { color: #6b7280; }
+        .dark .border-gray-200 { border-color: #4b5563; }
+        .dark .shadow-lg { box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -2px rgba(0, 0, 0, 0.15); }
+
+        /* Custom scrollbar - minimal and non-intrusive */
+        ::-webkit-scrollbar { 
+            width: 4px; 
+            height: 4px;
+        }
+        ::-webkit-scrollbar-track { 
+            background-color: transparent; 
+        }
+        ::-webkit-scrollbar-thumb { 
+            background-color: rgba(156, 163, 175, 0.3); 
+            border-radius: 2px; 
+        }
+        .dark ::-webkit-scrollbar-thumb { 
+            background-color: rgba(75, 85, 99, 0.4); 
+        }
+        ::-webkit-scrollbar-thumb:hover { 
+            background-color: rgba(156, 163, 175, 0.5); 
+        }
+        .dark ::-webkit-scrollbar-thumb:hover { 
+            background-color: rgba(75, 85, 99, 0.6); 
+        }
+
+        /* Splash Screen */
+        #splash-screen {
+            transition: opacity 0.5s ease-in-out;
+        }
+        .splash-content {
+            animation: fadeInUp 1s ease-out;
+        }
+        .splash-logo {
+            font-family: 'Inter', sans-serif;
+            font-size: 4rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #EF4444 0%, #DC2626 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            letter-spacing: 1px;
+        }
+        .splash-tagline {
+            animation: fadeIn 1s ease-out 0.5s forwards;
+        }
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(30px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        
+        /* Recording Indicator */
+        @keyframes pulse-red {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .recording-indicator {
+            animation: pulse-red 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+
+        /* Mouse Highlight Circle (CSS implementation for preview only) */
+        #mouse-highlight {
+            position: fixed;
+            width: 40px;
+            height: 40px;
+            border: 2px solid rgba(255, 0, 0, 0.8);
+            background-color: rgba(255, 0, 0, 0.1);
+            border-radius: 50%;
+            pointer-events: none;
+            transform: translate(-50%, -50%);
+            z-index: 9999;
+            transition: width 0.1s, height 0.1s;
+        }
+        
+        /* Toast notifications */
+        .toast {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 12px 20px;
+            border-radius: 8px;
+            color: white;
+            font-weight: 500;
+            z-index: 10000;
+            transform: translateX(150%);
+            transition: transform 0.3s ease;
+        }
+        .toast.show {
+            transform: translateX(0);
+        }
+        .toast.success { background-color: #10B981; }
+        .toast.error { background-color: #EF4444; }
+        .toast.warning { background-color: #F59E0B; }
+        .toast.info { background-color: #3B82F6; }
+        
+        /* Responsive adjustments */
+        @media (max-width: 768px) {
+            .splash-logo {
+                font-size: 2.5rem;
+            }
+            #app-container main {
+                flex-direction: column;
+            }
+            .sidebar-compact {
+                width: 100%;
+                max-height: 40vh;
+            }
+        }
+        
+        @media (min-width: 769px) {
+            .sidebar-compact {
+                width: 320px;
+            }
+        }
+    </style>
+    <script>
+        tailwind.config = {
+            darkMode: 'class'
+        }
+    </script>
+</head>
+<body class="flex flex-col h-screen overflow-hidden">
+
+    <!-- Toast Notifications -->
+    <div id="toast-container"></div>
+
+    <!-- Splash Screen -->
+    <div id="splash-screen" class="fixed inset-0 flex flex-col justify-center items-center z-50 bg-gray-100 dark:bg-gray-900">
+        <div class="splash-content text-center">
+            <div class="text-5xl font-bold mb-4" style="color: #EF4444;">
+                <i class="fas fa-video"></i>
+            </div>
+            <div class="splash-logo">[CaptureForge]</div>
+            <div class="text-sm font-semibold text-gray-400 tracking-widest uppercase mt-1">Direct Edition</div>
+            <div id="splash-tagline" class="splash-tagline text-xl text-gray-500 dark:text-gray-400 opacity-0 mt-2">Share, Record, and Highlight.</div>
+        </div>
+    </div>
+
+    <!-- Main Application Container -->
+    <div id="app-container" class="flex flex-col h-full opacity-0 transition-opacity duration-500">
+        
+        <!-- Header -->
+        <header class="flex-shrink-0 flex justify-between items-center px-4 py-3 bg-white dark:bg-gray-800 shadow-sm z-20 border-b border-gray-200 dark:border-gray-700">
+            <div class="flex items-center gap-2">
+                <span class="text-2xl" style="color: #EF4444;"><i class="fas fa-video"></i></span>
+                <span class="text-xl font-bold text-gray-900 dark:text-gray-100">CaptureForge</span>
+                <span class="text-xs bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-100 px-2 py-1 rounded">Direct</span>
+            </div>
+            
+            <div class="flex items-center gap-4">
+                <div id="recording-status" class="hidden items-center gap-2 text-red-600 font-semibold">
+                    <span class="recording-indicator w-3 h-3 bg-red-600 rounded-full"></span>
+                    <span id="timer">REC 00:00</span>
+                </div>
+                <button id="theme-toggle" class="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700" title="Toggle dark mode">
+                    <svg id="theme-icon-light" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
+                    <svg id="theme-icon-dark" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" /></svg>
+                </button>
+            </div>
+        </header>
+
+        <!-- Main Content Area -->
+        <main class="flex-grow flex flex-col md:flex-row h-full overflow-hidden">
+            
+            <!-- Controls Sidebar -->
+            <aside class="sidebar-compact flex-shrink-0 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 p-4 overflow-y-auto">
+                <div class="space-y-5">
+                    <h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 border-b border-gray-200 dark:border-gray-700 pb-2">Controls</h2>
+                    
+                    <!-- Start/Stop Buttons -->
+                    <div>
+                        <button id="start-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-4 rounded-lg flex items-center justify-center gap-2 transition-all text-sm">
+                            <i class="fas fa-play"></i>
+                            <span>Start Sharing</span>
+                        </button>
+                        <button id="start-recording-btn" class="w-full mt-2 bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 px-4 rounded-lg flex items-center justify-center gap-2 transition-all text-sm hidden">
+                            <i class="fas fa-circle"></i>
+                            <span>Start Recording</span>
+                        </button>
+                        <button id="pause-resume-btn" class="w-full mt-2 bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2.5 px-4 rounded-lg flex items-center justify-center gap-2 transition-all text-sm hidden">
+                            <i class="fas fa-pause"></i>
+                            <span>Pause</span>
+                        </button>
+                        <button id="stop-btn" class="w-full mt-2 bg-gray-600 hover:bg-gray-700 text-white font-bold py-2.5 px-4 rounded-lg flex items-center justify-center gap-2 transition-all text-sm hidden">
+                            <i class="fas fa-stop"></i>
+                            <span>Stop</span>
+                        </button>
+                    </div>
+                    
+                    <hr class="border-gray-200 dark:border-gray-700">
+
+                    <!-- Recording Options -->
+                    <div>
+                        <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Recording Options</h3>
+                        <div class="space-y-2">
+                            <!-- Include Audio (Parent) -->
+                            <label class="flex items-center justify-between p-2 bg-gray-100 dark:bg-gray-700 rounded-lg">
+                                <span class="font-medium text-gray-900 dark:text-gray-100 text-sm">Include Audio</span>
+                                <div class="relative inline-flex items-center cursor-pointer">
+                                    <input type="checkbox" id="include-audio" class="sr-only peer" checked>
+                                    <div class="w-9 h-5 bg-gray-300 dark:bg-gray-600 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
+                                </div>
+                            </label>
+
+                            <!-- Sub-options container -->
+                            <div id="audio-sub-options" class="ml-4 pl-3 border-l-2 border-gray-200 dark:border-gray-700 space-y-4 transition-all duration-300 ease-in-out">
+                                
+                                <!-- Microphone Section -->
+                                <div>
+                                    <label class="flex items-center justify-between p-2 bg-gray-100 dark:bg-gray-700 rounded-lg">
+                                        <span class="font-medium text-gray-900 dark:text-gray-100 text-sm">Microphone</span>
+                                        <div class="relative inline-flex items-center cursor-pointer">
+                                            <input type="checkbox" id="include-mic" class="sr-only peer">
+                                            <div class="w-9 h-5 bg-gray-300 dark:bg-gray-600 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
+                                        </div>
+                                    </label>
+                                    
+                                    <!-- Raw Audio Mode (Child of Microphone) -->
+                                    <div id="raw-audio-container" class="hidden mt-2 ml-2 pl-2 border-l border-gray-300 dark:border-gray-600">
+                                        <label class="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-750 rounded-lg">
+                                            <span class="font-medium text-gray-700 dark:text-gray-300 text-xs">Raw Audio (Pro)</span>
+                                            <div class="relative inline-flex items-center cursor-pointer">
+                                                <input type="checkbox" id="raw-audio-mode" class="sr-only peer">
+                                                <div class="w-8 h-4 bg-gray-300 dark:bg-gray-600 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-blue-500"></div>
+                                            </div>
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <!-- System Audio Section (Sibling of Mic) -->
+                                <div>
+                                    <label class="flex items-center justify-between p-2 bg-gray-100 dark:bg-gray-700 rounded-lg">
+                                        <span class="font-medium text-gray-900 dark:text-gray-100 text-sm">System Audio</span>
+                                        <div class="relative inline-flex items-center cursor-pointer">
+                                            <input type="checkbox" id="include-sys-audio" class="sr-only peer" checked>
+                                            <div class="w-9 h-5 bg-gray-300 dark:bg-gray-600 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
+                                        </div>
+                                    </label>
+                                    <!-- Warning Note -->
+                                    <div id="sys-audio-warning" class="mt-1 p-2 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded text-xs text-yellow-700 dark:text-yellow-400">
+                                        <i class="fas fa-exclamation-triangle mr-1"></i> Note: Fullscreen capture often blocks system audio. Use <b>Tab</b> capture for best sound results.
+                                    </div>
+                                </div>
+
+                            </div>
+
+                            <!-- Mouse Highlight (Separate) -->
+                            <label class="flex items-center justify-between p-2 bg-gray-100 dark:bg-gray-700 rounded-lg mt-2">
+                                <span class="font-medium text-gray-900 dark:text-gray-100 text-sm">Highlight Mouse (Preview)</span>
+                                <div class="relative inline-flex items-center cursor-pointer">
+                                    <input type="checkbox" id="highlight-mouse" class="sr-only peer" checked>
+                                    <div class="w-9 h-5 bg-gray-300 dark:bg-gray-600 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+
+                    <hr class="border-gray-200 dark:border-gray-700">
+
+                    <!-- Quality Settings -->
+                    <div>
+                        <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Quality Settings</h3>
+                        <div class="space-y-2">
+                            <div class="p-2 bg-gray-100 dark:bg-gray-700 rounded-lg">
+                                <label class="block font-medium text-gray-900 dark:text-gray-100 mb-1 text-sm">Video Quality</label>
+                                <select id="video-quality" class="w-full p-1.5 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 text-sm">
+                                    <option value="high">High (4K/Native)</option>
+                                    <option value="medium" selected>Medium (1080p)</option>
+                                    <option value="low">Low (720p)</option>
+                                </select>
+                            </div>
+                            <div class="p-2 bg-gray-100 dark:bg-gray-700 rounded-lg">
+                                <label class="block font-medium text-gray-900 dark:text-gray-100 mb-1 text-sm">Frame Rate</label>
+                                <select id="frame-rate" class="w-full p-1.5 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 text-sm">
+                                    <option value="60">60 FPS</option>
+                                    <option value="30" selected>30 FPS</option>
+                                    <option value="24">24 FPS</option>
+                                    <option value="15">15 FPS</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <hr class="border-gray-200 dark:border-gray-700">
+                    
+                    <!-- Download Area -->
+                    <div>
+                        <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Your Recording</h3>
+                        <div id="download-area" class="hidden text-center">
+                            <p class="text-xs text-gray-600 dark:text-gray-400 mb-2">Your recording is ready!</p>
+                            <a id="download-link" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg flex items-center justify-center gap-2 transition-all text-sm mb-2">
+                                <i class="fas fa-download"></i>
+                                <span>Download Video</span>
+                            </a>
+                            <button id="new-recording-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-1.5 px-4 rounded-lg flex items-center justify-center gap-2 transition-all text-xs">
+                                <i class="fas fa-plus"></i>
+                                <span>New Recording</span>
+                            </button>
+                        </div>
+                        <div id="no-recording" class="text-center">
+                            <p class="text-xs text-gray-500 dark:text-gray-500">Your downloaded video will appear here.</p>
+                        </div>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- Video Preview Area -->
+            <div class="preview-expanded flex-grow overflow-hidden bg-gray-100 dark:bg-gray-900 flex flex-col">
+                <div class="flex-grow flex items-center justify-center p-4 overflow-hidden">
+                    <div id="preview-wrapper" class="w-full h-full bg-black rounded-lg shadow-lg flex items-center justify-center relative overflow-hidden max-w-6xl max-h-full">
+                        <video id="video-preview" class="max-w-full max-h-full" autoplay muted playsinline></video>
+                        <div id="placeholder-text" class="text-gray-500 dark:text-gray-700 text-lg text-center">
+                            <i class="fas fa-desktop text-6xl mb-4"></i>
+                            <p>Your screen share will appear here.</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Recording Stats -->
+                <div id="recording-stats" class="hidden p-3 text-center text-sm text-gray-600 dark:text-gray-400 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+                    <p>Recording: <span id="file-size">0 MB</span> | <span id="recording-time">00:00</span></p>
+                </div>
+            </div>
+        </main>
+        
+        <!-- Mouse Highlight Element (Visual only for user) -->
+        <div id="mouse-highlight" class="hidden"></div>
+
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            
+            // === DOM Element Cache ===
+            const $ = (selector) => document.querySelector(selector);
+            const $$ = (selector) => document.querySelectorAll(selector);
+            
+            // Modals & App Containers
+            const splashScreen = $('#splash-screen');
+            const appContainer = $('#app-container');
+            
+            // Theme
+            const themeToggle = $('#theme-toggle');
+            const themeIconLight = $('#theme-icon-light');
+            const themeIconDark = $('#theme-icon-dark');
+            
+            // Buttons
+            const startBtn = $('#start-btn');
+            const startRecordingBtn = $('#start-recording-btn');
+            const pauseResumeBtn = $('#pause-resume-btn');
+            const stopBtn = $('#stop-btn');
+            const newRecordingBtn = $('#new-recording-btn');
+            
+            // Options
+            const includeAudioCheck = $('#include-audio'); // Master
+            const audioSubOptions = $('#audio-sub-options'); // Container
+            
+            const includeMicCheck = $('#include-mic'); // Child 1
+            const rawAudioContainer = $('#raw-audio-container');
+            const rawAudioCheck = $('#raw-audio-mode'); // Child 1.1
+            
+            const includeSysAudioCheck = $('#include-sys-audio'); // Child 2
+            const sysAudioWarning = $('#sys-audio-warning');
+            
+            const highlightMouseCheck = $('#highlight-mouse');
+            const videoQualitySelect = $('#video-quality');
+            const frameRateSelect = $('#frame-rate');
+            
+            // Status & Preview
+            const recordingStatusEl = $('#recording-status');
+            const timerEl = $('#timer');
+            const previewWrapper = $('#preview-wrapper');
+            const videoPreview = $('#video-preview');
+            const placeholderText = $('#placeholder-text');
+            const recordingStats = $('#recording-stats');
+            const fileSizeEl = $('#file-size');
+            const recordingTimeEl = $('#recording-time');
+            
+            // Download Area
+            const downloadArea = $('#download-area');
+            const noRecording = $('#no-recording');
+            const downloadLink = $('#download-link');
+            
+            // Mouse Highlight
+            const mouseHighlight = $('#mouse-highlight');
+            
+            // === State ===
+            let isSharing = false;
+            let isRecording = false;
+            let isPaused = false;
+            let mediaRecorder;
+            let recordedChunks = [];
+            let displayStream; // Screen/tab stream
+            let audioStream; // Mic/tab audio stream
+            let timerInterval;
+            let secondsElapsed = 0;
+            let recordingStartTime = 0;
+            // -- Optimization: Add running total --
+            let totalRecordedSize = 0;
+
+            // Browser capabilities
+            const browserCapabilities = {
+                screenShare: !!navigator.mediaDevices?.getDisplayMedia,
+                mediaRecorder: !!window.MediaRecorder,
+                systemAudio: false
+            };
+
+            // === Initializers ===
+
+            function init() {
+                // Show splash screen, then fade out and show app
+                setTimeout(() => {
+                    splashScreen.style.opacity = '0';
+                    splashScreen.addEventListener('transitionend', () => {
+                        splashScreen.classList.add('hidden');
+                        appContainer.style.opacity = '1';
+                        checkBrowserSupport();
+                    }, { once: true });
+                }, 1500);
+                
+                initTheme();
+                initButtons();
+                initEventListeners();
+            }
+
+            function initTheme() {
+                const savedTheme = localStorage.getItem('captureforge-theme') || 'light';
+                if (savedTheme === 'dark') {
+                    document.documentElement.classList.add('dark');
+                    themeIconLight.classList.add('hidden');
+                    themeIconDark.classList.remove('hidden');
+                } else {
+                    document.documentElement.classList.remove('dark');
+                    themeIconLight.classList.remove('hidden');
+                    themeIconDark.classList.add('hidden');
+                }
+                
+                themeToggle.addEventListener('click', () => {
+                    const isDark = document.documentElement.classList.toggle('dark');
+                    localStorage.setItem('captureforge-theme', isDark ? 'dark' : 'light');
+                    themeIconLight.classList.toggle('hidden', isDark);
+                    themeIconDark.classList.toggle('hidden', !isDark);
+                });
+            }
+
+            function initButtons() {
+                startBtn.addEventListener('click', startSharing);
+                startRecordingBtn.addEventListener('click', startRecording);
+                pauseResumeBtn.addEventListener('click', togglePauseResume);
+                stopBtn.addEventListener('click', stopAll);
+                
+                newRecordingBtn.addEventListener('click', () => {
+                    // RESET RECORDED CHUNKS HERE, NOT IN RESETUI
+                    recordedChunks = [];
+                    totalRecordedSize = 0; // Reset running total
+                    resetUI();
+                    downloadArea.classList.add('hidden');
+                    noRecording.classList.remove('hidden');
+                });
+                
+                highlightMouseCheck.addEventListener('change', () => {
+                    if (highlightMouseCheck.checked && isSharing) {
+                        document.addEventListener('mousemove', updateMousePos);
+                    } else {
+                        document.removeEventListener('mousemove', updateMousePos);
+                        mouseHighlight.classList.add('hidden');
+                    }
+                });
+
+                // --- UI VISIBILITY LOGIC (HIERARCHY) ---
+                
+                // 1. Master Audio Toggle: Controls Sub-options Container
+                includeAudioCheck.addEventListener('change', () => {
+                    if (includeAudioCheck.checked) {
+                        audioSubOptions.classList.remove('hidden');
+                    } else {
+                        audioSubOptions.classList.add('hidden');
+                    }
+                });
+
+                // 2. Mic Toggle: Controls Raw Audio Visibility
+                includeMicCheck.addEventListener('change', () => {
+                    if (includeMicCheck.checked) {
+                        rawAudioContainer.classList.remove('hidden');
+                    } else {
+                        rawAudioContainer.classList.add('hidden');
+                    }
+                });
+                
+                // 3. System Audio Toggle: Controls Warning Visibility
+                includeSysAudioCheck.addEventListener('change', () => {
+                    if (includeSysAudioCheck.checked) {
+                        sysAudioWarning.classList.remove('hidden');
+                    } else {
+                        sysAudioWarning.classList.add('hidden');
+                    }
+                });
+
+                // Initialize state
+                if (!includeAudioCheck.checked) audioSubOptions.classList.add('hidden');
+                if (!includeMicCheck.checked) rawAudioContainer.classList.add('hidden');
+                if (!includeSysAudioCheck.checked) sysAudioWarning.classList.add('hidden');
+
+                // --- END UI VISIBILITY LOGIC ---
+
+                // Listeners for quality changes
+                videoQualitySelect.addEventListener('change', updateStreamConstraints);
+                frameRateSelect.addEventListener('change', updateStreamConstraints);
+            }
+
+            function updateStreamConstraints() {
+                if (isSharing && displayStream) {
+                    const track = displayStream.getVideoTracks()[0];
+                    if (track && track.applyConstraints) {
+                        const quality = videoQualitySelect.value;
+                        const frameRate = parseInt(frameRateSelect.value);
+                        
+                        const constraints = {
+                            width: { ideal: getQualityWidth(quality) },
+                            height: { ideal: getQualityHeight(quality) },
+                            frameRate: { ideal: frameRate }
+                        };
+                        
+                        track.applyConstraints(constraints)
+                            .then(() => {
+                                console.log('Constraints updated successfully');
+                                showToast('Quality updated', 'info');
+                            })
+                            .catch(e => {
+                                console.warn("Constraint update failed", e);
+                            });
+                    }
+                }
+            }
+
+            function initEventListeners() {
+                window.addEventListener('beforeunload', (e) => {
+                    if (isRecording) {
+                        e.preventDefault();
+                        e.returnValue = 'You have an active recording. Are you sure you want to leave?';
+                        return e.returnValue;
+                    }
+                });
+            }
+
+            // === Browser Support Checks ===
+
+            async function checkBrowserSupport() {
+                if (!browserCapabilities.screenShare) {
+                    showToast('Screen sharing is not supported in your browser', 'error');
+                    startBtn.disabled = true;
+                    return;
+                }
+
+                if (!browserCapabilities.mediaRecorder) {
+                    showToast('Media recording is not supported in your browser', 'error');
+                    startBtn.disabled = true;
+                    return;
+                }
+
+                // Check for supported MIME types
+                const supportedMimeType = getSupportedMimeType();
+                if (!supportedMimeType) {
+                    showToast('Your browser has limited video format support', 'warning');
+                }
+            }
+
+            // === Core Logic ===
+
+            async function startSharing() {
+                try {
+                    showToast('Select what you want to share', 'info');
+                    
+                    // Get quality settings
+                    const quality = videoQualitySelect.value;
+                    const frameRate = parseInt(frameRateSelect.value);
+                    const useRawAudio = rawAudioCheck.checked;
+                    
+                    // Determine if we want System Audio based on toggles
+                    const captureSystemAudio = includeAudioCheck.checked && includeSysAudioCheck.checked;
+                    
+                    // Configure constraints
+                    // NOTE: 'audio' here controls System Audio request in getDisplayMedia
+                    const constraints = {
+                        video: {
+                            cursor: "always",
+                            frameRate: { ideal: frameRate, max: frameRate },
+                            width: { ideal: getQualityWidth(quality) },
+                            height: { ideal: getQualityHeight(quality) }
+                        },
+                        audio: captureSystemAudio ? {
+                            echoCancellation: !useRawAudio, 
+                            autoGainControl: !useRawAudio,
+                            noiseSuppression: !useRawAudio,
+                            systemAudio: "include" 
+                        } : false
+                    };
+
+                    // Request screen share
+                    displayStream = await navigator.mediaDevices.getDisplayMedia(constraints);
+                    
+                    // Check if we actually got audio tracks (if requested)
+                    const hasAudio = displayStream.getAudioTracks().length > 0;
+                    if (captureSystemAudio && !hasAudio) {
+                        // User might have unchecked "Share audio" in browser picker
+                        // OR they chose Fullscreen on macOS
+                        showToast('System audio was not captured. Did you select a Tab?', 'warning');
+                    }
+
+                    // Handle if user stops sharing via browser UI
+                    displayStream.getVideoTracks()[0].onended = stopAll;
+                    
+                    // Update UI
+                    isSharing = true;
+                    startBtn.classList.add('hidden');
+                    startRecordingBtn.classList.remove('hidden');
+                    stopBtn.classList.remove('hidden');
+                    placeholderText.classList.add('hidden');
+                    videoPreview.classList.remove('hidden');
+                    
+                    // Set up preview video
+                    videoPreview.srcObject = displayStream;
+                    
+                    // Start mouse tracking if enabled (Only for Preview now)
+                    if (highlightMouseCheck.checked) {
+                        document.addEventListener('mousemove', updateMousePos);
+                    }
+                    
+                    showToast('Screen sharing started', 'success');
+
+                } catch (err) {
+                    console.error("Error starting screen share:", err);
+                    
+                    if (err.toString().includes('permissions policy') || err.name === 'SecurityError') {
+                        showToast("Browser policy restricts sharing here. Please download file to use.", 'error');
+                    } else if (err.name !== 'NotAllowedError') {
+                        showToast("Could not start screen sharing: " + err.message, 'error');
+                    }
+                }
+            }
+
+            async function startRecording() {
+                if (!isSharing || !displayStream) {
+                    showToast("Please start sharing your screen first.", 'warning');
+                    return;
+                }
+                
+                try {
+                    // 1. Get Audio Streams based on user selection
+                    let audioStream = null;
+                    const audioTracks = [];
+
+                    // A. System audio (From Display Stream)
+                    // We check "Include Audio" master + "System Audio" child toggles
+                    if (includeAudioCheck.checked && includeSysAudioCheck.checked && displayStream.getAudioTracks().length > 0) {
+                        displayStream.getAudioTracks().forEach(track => audioTracks.push(track.clone()));
+                    }
+
+                    // B. Microphone audio 
+                    // We check "Include Audio" master + "Microphone" child toggles
+                    if (includeAudioCheck.checked && includeMicCheck.checked) {
+                        try {
+                            const useRawAudio = rawAudioCheck.checked;
+                            const micStream = await navigator.mediaDevices.getUserMedia({
+                                audio: {
+                                    echoCancellation: !useRawAudio,
+                                    noiseSuppression: !useRawAudio,
+                                    autoGainControl: !useRawAudio,
+                                    sampleRate: 44100,
+                                    channelCount: 2
+                                }
+                            });
+                            micStream.getAudioTracks().forEach(track => audioTracks.push(track));
+                        } catch (audioErr) {
+                            console.warn('Microphone access failed:', audioErr);
+                            showToast('Microphone access failed', 'warning');
+                        }
+                    }
+
+                    // Create combined audio stream if we have any audio tracks
+                    if (audioTracks.length > 0) {
+                        audioStream = new MediaStream(audioTracks);
+                    }
+                    
+                    // 2. DIRECT EDITION: Record directly from displayStream
+                    const combinedStream = new MediaStream();
+                    
+                    // Add video track from DIRECT stream (No Canvas)
+                    displayStream.getVideoTracks().forEach(track => {
+                        combinedStream.addTrack(track);
+                    });
+                    
+                    // Add audio if available
+                    if (audioStream) {
+                        audioStream.getAudioTracks().forEach(track => {
+                            combinedStream.addTrack(track);
+                        });
+                    }
+                    
+                    // 3. Setup MediaRecorder with reliable format
+                    recordedChunks = [];
+                    totalRecordedSize = 0; // Reset counter at start
+                    
+                    const mimeTypes = [
+                        'video/mp4;codecs=h264,aac',  // Force MP4 first
+                        'video/webm;codecs=vp9,opus',
+                        'video/webm;codecs=vp8,opus',
+                        'video/webm'
+                    ];
+                    
+                    let selectedMimeType = '';
+                    for (const mimeType of mimeTypes) {
+                        if (MediaRecorder.isTypeSupported(mimeType)) {
+                            selectedMimeType = mimeType;
+                            break;
+                        }
+                    }
+                    
+                    const options = selectedMimeType ? { mimeType: selectedMimeType } : {};
+                    
+                    if (selectedMimeType.includes('video')) {
+                        // Dynamically pull bitrate at start of recording
+                        options.videoBitsPerSecond = getVideoBitrate(videoQualitySelect.value);
+                    }
+                    
+                    try {
+                        mediaRecorder = new MediaRecorder(combinedStream, options);
+                    } catch (e) {
+                        console.warn("Preferred format failed, using default:", e);
+                        mediaRecorder = new MediaRecorder(combinedStream);
+                    }
+
+                    mediaRecorder.ondataavailable = (e) => {
+                        if (e.data.size > 0) {
+                            recordedChunks.push(e.data);
+                            // Optimization: Update running total instead of iterating full array
+                            totalRecordedSize += e.data.size;
+                            updateFileSize();
+                        }
+                    };
+
+                    // === Cleanup Handler ===
+                    mediaRecorder.onstop = () => {
+                        // A. Generate and Download File
+                        let fileExtension = 'webm';
+                        if (mediaRecorder.mimeType.includes('mp4')) {
+                            fileExtension = 'mp4';
+                        }
+                        
+                        const blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType });
+                        const url = URL.createObjectURL(blob);
+                        downloadLink.href = url;
+                        
+                        const timestamp = new Date().toISOString().replace(/:/g, '-').slice(0, 19);
+                        downloadLink.download = `CaptureForge-Direct-${timestamp}.${fileExtension}`;
+                        
+                        downloadArea.classList.remove('hidden');
+                        noRecording.classList.add('hidden');
+                        showToast('Recording saved successfully', 'success');
+
+                        // B. Clean up tracks AFTER file is generated (Race Condition Fix)
+                        if (displayStream) {
+                            displayStream.getTracks().forEach(track => track.stop());
+                        }
+
+                        // Stop Audio tracks
+                        if (audioStream) {
+                            audioStream.getTracks().forEach(track => track.stop());
+                        }
+
+                        // Reset UI
+                        videoPreview.srcObject = null;
+                        isSharing = false;
+                        resetUI();
+                    };
+                    
+                    mediaRecorder.onerror = (e) => {
+                        console.error('MediaRecorder error:', e);
+                        showToast('Recording error occurred', 'error');
+                    };
+                    
+                    // 4. Start Recording & UI Update
+                    // Optimization: Increase timeslice to reduce event frequency (1000 -> 2500)
+                    mediaRecorder.start(2500); 
+                    isRecording = true;
+                    recordingStartTime = Date.now();
+                    startRecordingBtn.classList.add('hidden');
+                    pauseResumeBtn.classList.remove('hidden');
+                    recordingStatusEl.classList.remove('hidden');
+                    recordingStats.classList.remove('hidden');
+                    startTimer();
+                    
+                    showToast('Recording started (Direct Mode)', 'success');
+
+                } catch (err) {
+                    console.error("Error starting recording:", err);
+                    showToast("Failed to start recording: " + err.message, 'error');
+                }
+            }
+
+            function togglePauseResume() {
+                if (!mediaRecorder) return;
+                
+                if (isPaused) {
+                    mediaRecorder.resume();
+                    pauseResumeBtn.innerHTML = '<i class="fas fa-pause"></i><span>Pause</span>';
+                    startTimer();
+                    showToast('Recording resumed', 'info');
+                } else {
+                    mediaRecorder.pause();
+                    pauseResumeBtn.innerHTML = '<i class="fas fa-play"></i><span>Resume</span>';
+                    stopTimer();
+                    showToast('Recording paused', 'info');
+                }
+                
+                isPaused = !isPaused;
+            }
+
+            function stopAll() {
+                // Case 1: If we are currently recording
+                if (isRecording && mediaRecorder && mediaRecorder.state !== 'inactive') {
+                    // Stop recorder and RETURN. 
+                    // Let mediaRecorder.onstop handle stream cleanup.
+                    mediaRecorder.stop();
+                    stopTimer();
+                    isRecording = false;
+                    isPaused = false;
+                    showToast('Processing recording...', 'info');
+                    return; 
+                }
+
+                // Case 2: We are NOT recording, just sharing screen
+                if (isSharing) {
+                    if (displayStream) {
+                        displayStream.getTracks().forEach(track => track.stop());
+                    }
+                    
+                    videoPreview.srcObject = null;
+                    isSharing = false;
+                    resetUI();
+                    showToast('Screen sharing stopped', 'info');
+                }
+            }
+            
+            function resetUI() {
+                startBtn.classList.remove('hidden');
+                startRecordingBtn.classList.add('hidden');
+                pauseResumeBtn.classList.add('hidden');
+                stopBtn.classList.add('hidden');
+                placeholderText.classList.remove('hidden');
+                videoPreview.classList.add('hidden');
+                recordingStatusEl.classList.add('hidden');
+                recordingStats.classList.add('hidden');
+                timerEl.textContent = 'REC 00:00';
+                
+                // Hide mouse highlight
+                mouseHighlight.classList.add('hidden');
+                document.removeEventListener('mousemove', updateMousePos);
+                
+                // Reset state
+                isPaused = false;
+                secondsElapsed = 0;
+                // REMOVED recordedChunks = [] from here to prevent premature clearing
+            }
+            
+            // === Timer & File Size ===
+            
+            function startTimer() {
+                secondsElapsed = 0;
+                timerInterval = setInterval(() => {
+                    if (!isPaused) {
+                        secondsElapsed++;
+                        updateTimerDisplay();
+                        updateRecordingTime();
+                    }
+                }, 1000);
+            }
+
+            function stopTimer() {
+                clearInterval(timerInterval);
+            }
+
+            function updateTimerDisplay() {
+                const minutes = Math.floor(secondsElapsed / 60).toString().padStart(2, '0');
+                const seconds = (secondsElapsed % 60).toString().padStart(2, '0');
+                timerEl.textContent = `REC ${minutes}:${seconds}`;
+            }
+
+            function updateRecordingTime() {
+                const totalSeconds = Math.floor((Date.now() - recordingStartTime) / 1000);
+                const minutes = Math.floor(totalSeconds / 60).toString().padStart(2, '0');
+                const seconds = (totalSeconds % 60).toString().padStart(2, '0');
+                recordingTimeEl.textContent = `${minutes}:${seconds}`;
+            }
+
+            function updateFileSize() {
+                // Optimization: Use pre-calculated total instead of reducing array
+                // const totalSize = recordedChunks.reduce((acc, chunk) => acc + chunk.size, 0);
+                const sizeInMB = (totalRecordedSize / (1024 * 1024)).toFixed(1);
+                fileSizeEl.textContent = `${sizeInMB} MB`;
+            }
+
+            // === Mouse Highlight (Preview Only) ===
+
+            function updateMousePos(e) {
+                // Optimization: Simple throttle to prevent excessive layout thrashing
+                if (window.mouseFrameRequested) return;
+                window.mouseFrameRequested = true;
+                
+                requestAnimationFrame(() => {
+                    const rect = previewWrapper.getBoundingClientRect();
+                    const x = e.clientX - rect.left;
+                    const y = e.clientY - rect.top;
+                    
+                    if (highlightMouseCheck.checked) {
+                        mouseHighlight.style.left = `${e.clientX}px`;
+                        mouseHighlight.style.top = `${e.clientY}px`;
+                        mouseHighlight.classList.remove('hidden');
+                    }
+                    window.mouseFrameRequested = false;
+                });
+            }
+            
+            // === Utility Functions ===
+
+            function getSupportedMimeType() {
+                const types = [
+                    'video/webm;codecs=vp9,opus',
+                    'video/webm;codecs=vp8,opus',
+                    'video/webm;codecs=h264,opus',
+                    'video/mp4;codecs=h264,aac',
+                    'video/webm',
+                    'video/mp4'
+                ];
+                
+                return types.find(type => MediaRecorder.isTypeSupported(type)) || '';
+            }
+
+            function getQualityWidth(quality) {
+                switch(quality) {
+                    case 'high': return 3840; // 4K Ideal
+                    case 'medium': return 1920; // 1080p
+                    case 'low': return 1280; // 720p
+                    default: return 1920;
+                }
+            }
+
+            function getQualityHeight(quality) {
+                switch(quality) {
+                    case 'high': return 2160; // 4K Ideal
+                    case 'medium': return 1080; // 1080p
+                    case 'low': return 720; // 720p
+                    default: return 1080;
+                }
+            }
+
+            function getVideoBitrate(quality) {
+                switch(quality) {
+                    case 'high': return 8000000; // Optimization: Reduced from 15Mbps to 8Mbps for stability
+                    case 'medium': return 4000000; // Optimization: Reduced to 4Mbps
+                    case 'low': return 1000000; // 1 Mbps
+                    default: return 4000000;
+                }
+            }
+
+            function showToast(message, type = 'info') {
+                const toast = document.createElement('div');
+                toast.className = `toast ${type}`;
+                toast.textContent = message;
+                
+                const icon = document.createElement('i');
+                icon.className = `fas ${
+                    type === 'success' ? 'fa-check-circle' :
+                    type === 'error' ? 'fa-exclamation-circle' :
+                    type === 'warning' ? 'fa-exclamation-triangle' :
+                    'fa-info-circle'
+                } mr-2`;
+                
+                toast.prepend(icon);
+                $('#toast-container').appendChild(toast);
+                
+                // Show toast
+                setTimeout(() => toast.classList.add('show'), 100);
+                
+                // Auto remove after 5 seconds
+                setTimeout(() => {
+                    toast.classList.remove('show');
+                    setTimeout(() => toast.remove(), 300);
+                }, 5000);
+            }
+
+            // Let's go!
+            init();
+        });
+    </script>
+
+</body>
+</html>
