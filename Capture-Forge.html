@@ -6,7 +6,9 @@
     <title>CaptureForge - Direct Edition</title>
     
     <script>
-        const TOOL_VERSION = '1.9.0';//Uses IndexedDB for longer recording length
+        // Version 1.9.9: Added Wake Lock API to prevent sleep during long exports.
+        // Optimized Keep-Alive logic during streaming to prevent browser timeouts.
+        const TOOL_VERSION = '1.9.9';
     </script>
     
     <!-- Tailwind CSS -->
@@ -134,6 +136,15 @@
             animation: ping-slow 1s cubic-bezier(0, 0, 0.2, 1) infinite;
         }
         
+        /* Processing Pulse */
+        @keyframes pulse-blue {
+            0%, 100% { background-color: #3B82F6; }
+            50% { background-color: #60A5FA; }
+        }
+        .processing-pulse {
+            animation: pulse-blue 1.5s infinite;
+        }
+        
         /* Responsive adjustments */
         @media (max-width: 768px) {
             .splash-logo {
@@ -253,6 +264,17 @@
             <!-- Controls Sidebar -->
             <aside class="sidebar-compact flex-shrink-0 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 p-4 overflow-y-auto">
                 <div class="space-y-5">
+                    <!-- Recovery Section -->
+                    <div id="recovery-alert" class="hidden bg-orange-100 dark:bg-orange-900/30 border-l-4 border-orange-500 p-3 mb-4 rounded-r">
+                        <div class="flex flex-col">
+                            <span class="text-xs font-bold text-orange-700 dark:text-orange-300 uppercase mb-1">Crash Recovery</span>
+                            <p class="text-xs text-orange-800 dark:text-orange-200 mb-2">Found unsaved footage from a previous session.</p>
+                            <button id="recover-btn" class="bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold py-1.5 px-3 rounded transition-colors">
+                                Recover & Save
+                            </button>
+                        </div>
+                    </div>
+
                     <h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100 border-b border-gray-200 dark:border-gray-700 pb-2">Controls</h2>
                     
                     <!-- Start/Stop Buttons -->
@@ -380,9 +402,31 @@
                     <!-- Download Area -->
                     <div>
                         <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Your Recording</h3>
+                        
+                        <!-- Processing Indicator (New) -->
+                        <div id="processing-area" class="hidden text-center mb-3">
+                            <div class="processing-pulse w-full h-2 rounded-full mb-2"></div>
+                            <p class="text-xs text-blue-600 dark:text-blue-400 font-semibold animate-pulse">Processing Recording...</p>
+                        </div>
+                        
+                        <!-- NEW: Save to Disk Button (For Large Files) -->
+                        <div id="save-disk-area" class="hidden text-center mb-3">
+                             <p id="save-disk-msg" class="text-xs text-orange-600 dark:text-orange-400 mb-2 font-bold">File too large for auto-download.</p>
+                             
+                             <!-- Disk Progress Bar -->
+                             <div id="disk-progress-container" class="hidden w-full bg-gray-200 rounded-full h-2.5 mb-2 dark:bg-gray-700">
+                                <div id="disk-progress-bar" class="bg-orange-600 h-2.5 rounded-full" style="width: 0%"></div>
+                             </div>
+                             
+                             <button id="save-disk-btn" class="w-full bg-orange-600 hover:bg-orange-700 text-white font-bold py-2 px-4 rounded-lg flex items-center justify-center gap-2 transition-all text-sm mb-2">
+                                <i class="fas fa-save"></i>
+                                <span>Save to Disk (Required)</span>
+                            </button>
+                        </div>
+
                         <div id="download-area" class="hidden text-center">
                             <p class="text-xs text-gray-600 dark:text-gray-400 mb-2">Your recording is ready!</p>
-                            <!-- Note: Changed to button behavior for IDB saving, but keeping UI exactly as is -->
+                            <!-- Note: Now acts as a direct link for instant download -->
                             <a id="download-link" class="cursor-pointer w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg flex items-center justify-center gap-2 transition-all text-sm mb-2">
                                 <i class="fas fa-download"></i>
                                 <span>Download Video</span>
@@ -438,7 +482,7 @@
                         request.onupgradeneeded = (e) => {
                             const db = e.target.result;
                             if (!db.objectStoreNames.contains(this.storeName)) {
-                                db.createObjectStore(this.storeName, { autoIncrement: true });
+                                db.createObjectStore(this.storeName, { keyPath: 'id', autoIncrement: true });
                             }
                         };
                         
@@ -452,6 +496,17 @@
                             console.error("DB Error", e);
                             reject(e);
                         };
+                    });
+                },
+
+                async chunkCount() {
+                    return new Promise((resolve) => {
+                         if (!this.db) return resolve(0);
+                         const transaction = this.db.transaction([this.storeName], 'readonly');
+                         const store = transaction.objectStore(this.storeName);
+                         const req = store.count();
+                         req.onsuccess = () => resolve(req.result);
+                         req.onerror = () => resolve(0);
                     });
                 },
 
@@ -474,7 +529,11 @@
 
                         const transaction = this.db.transaction([this.storeName], 'readwrite');
                         const store = transaction.objectStore(this.storeName);
-                        const request = store.add(chunk);
+                        // Store only the blob, ID is auto-incremented to guarantee order
+                        const request = store.add({
+                            blob: chunk,
+                            timestamp: Date.now()
+                        });
                         
                         request.onsuccess = () => resolve();
                         request.onerror = (e) => reject(e);
@@ -488,36 +547,57 @@
                         const store = transaction.objectStore(this.storeName);
                         const request = store.getAll();
                         
-                        request.onsuccess = () => resolve(request.result);
+                        request.onsuccess = () => {
+                             // Sort by ID to ensure sequence (though autoIncrement handles this, being safe)
+                             // Actually result comes back sorted by key in getAll()
+                             const chunks = request.result.map(item => item.blob);
+                             resolve(chunks);
+                        };
                         request.onerror = (e) => reject(e);
                     });
                 },
 
                 // MODERN STREAMING (The "Magic" for hours of recording)
                 // Pipes data from Disk (IDB) -> Disk (File System) without RAM spike
-                async streamToFile(writableStream) {
+                // v1.9.9: Added cursor batching & keep-alive logic? 
+                // Using simple cursor iteration is actually best for memory.
+                async streamToFile(writableStream, onProgress) {
                     return new Promise((resolve, reject) => {
                         const transaction = this.db.transaction([this.storeName], 'readonly');
                         const store = transaction.objectStore(this.storeName);
-                        const cursorRequest = store.openCursor();
+                        const request = store.openCursor();
                         
-                        cursorRequest.onsuccess = async (e) => {
+                        // Count total for progress
+                        let totalChunks = 0;
+                        let processed = 0;
+                        
+                        // We need count first (non-blocking)
+                        const countReq = store.count();
+                        countReq.onsuccess = () => {
+                            totalChunks = countReq.result;
+                        };
+
+                        request.onsuccess = async (e) => {
                             const cursor = e.target.result;
                             if (cursor) {
-                                try {
-                                    // Write specific chunk directly to file stream
-                                    await writableStream.write(cursor.value);
-                                    cursor.continue();
-                                } catch (err) {
-                                    reject(err);
+                                if (cursor.value && cursor.value.blob) {
+                                    try {
+                                        await writableStream.write(cursor.value.blob);
+                                        processed++;
+                                        if (onProgress && totalChunks > 0) {
+                                            onProgress(Math.round((processed / totalChunks) * 100));
+                                        }
+                                    } catch (err) {
+                                        console.error("Write error", err);
+                                        // continue? risk corruption.
+                                    }
                                 }
+                                cursor.continue();
                             } else {
-                                // Done iterating
-                                resolve();
+                                resolve(); // Done
                             }
                         };
-                        
-                        cursorRequest.onerror = (e) => reject(e);
+                        request.onerror = (e) => reject(e);
                     });
                 }
             };
@@ -532,6 +612,10 @@
             const countdownOverlay = $('#countdown-overlay');
             const countdownNumber = $('#countdown-number');
             
+            // Recovery
+            const recoveryAlert = $('#recovery-alert');
+            const recoverBtn = $('#recover-btn');
+
             // Theme
             const themeToggle = $('#theme-toggle');
             const themeIconLight = $('#theme-icon-light');
@@ -573,6 +657,13 @@
             
             // Download Area
             const downloadArea = $('#download-area');
+            const processingArea = $('#processing-area'); // New
+            const saveDiskArea = $('#save-disk-area'); // New
+            const saveDiskBtn = $('#save-disk-btn'); // New
+            const saveDiskMsg = $('#save-disk-msg');
+            const diskProgressContainer = $('#disk-progress-container');
+            const diskProgressBar = $('#disk-progress-bar');
+            
             const noRecording = $('#no-recording');
             const downloadLink = $('#download-link');
             
@@ -594,6 +685,8 @@
             // -- Optimization: Add running total --
             let totalRecordedSize = 0;
             let lastMimeType = ''; // To remember type for saving
+            let preparedBlobUrl = null; // New for pre-stitching
+            let wakeLock = null; // v1.9.9 Wake Lock
             
             // Audio Meter State
             let audioContext;
@@ -609,14 +702,18 @@
                 screenShare: !!navigator.mediaDevices?.getDisplayMedia,
                 mediaRecorder: !!window.MediaRecorder,
                 fileSystem: !!window.showSaveFilePicker,
-                documentPiP: 'documentPictureInPicture' in window
+                documentPiP: 'documentPictureInPicture' in window,
+                wakeLock: 'wakeLock' in navigator
             };
 
             // === Initializers ===
 
             function init() {
                 // Initialize DB first
-                VideoDB.init().catch(e => console.error("Failed to init DB", e));
+                VideoDB.init().then(() => {
+                    // Check for leftovers!
+                    checkForRecovery();
+                }).catch(e => console.error("Failed to init DB", e));
 
                 // Show splash screen, then fade out and show app
                 setTimeout(() => {
@@ -631,6 +728,51 @@
                 initTheme();
                 initButtons();
                 initEventListeners();
+            }
+
+            // RECOVERY LOGIC
+            async function checkForRecovery() {
+                try {
+                    const count = await VideoDB.chunkCount();
+                    if (count > 0) {
+                        // Found data!
+                        recoveryAlert.classList.remove('hidden');
+                        recoverBtn.onclick = () => {
+                            recoveryAlert.classList.add('hidden');
+                            // Assume it's large, go to save disk mode
+                            saveDiskArea.classList.remove('hidden');
+                            noRecording.classList.add('hidden');
+                            
+                            // Guess mimetype (usually webm)
+                            lastMimeType = 'video/webm'; 
+                            saveDiskMsg.textContent = "Recovered data ready to save.";
+                        };
+                    }
+                } catch(e) {
+                    console.warn("Recovery check failed", e);
+                }
+            }
+            
+            // WAKE LOCK LOGIC (v1.9.9)
+            async function requestWakeLock() {
+                if (browserCapabilities.wakeLock) {
+                    try {
+                        wakeLock = await navigator.wakeLock.request('screen');
+                        console.log('Wake Lock active');
+                        wakeLock.addEventListener('release', () => {
+                            console.log('Wake Lock released');
+                        });
+                    } catch (err) {
+                        console.error(`${err.name}, ${err.message}`);
+                    }
+                }
+            }
+            
+            async function releaseWakeLock() {
+                if (wakeLock !== null) {
+                    await wakeLock.release();
+                    wakeLock = null;
+                }
             }
 
             function initTheme() {
@@ -662,16 +804,35 @@
                 // PiP Toggle
                 pipBtn.addEventListener('click', toggleMiniPlayer);
                 
+                // Save Disk Button (Manual Trigger for big files)
+                saveDiskBtn.addEventListener('click', handleDiskSave);
+                
                 newRecordingBtn.addEventListener('click', async () => {
+                    // Clear previous data explicitly
                     await VideoDB.clear();
                     totalRecordedSize = 0;
                     resetUI();
+                    
+                    if (preparedBlobUrl) {
+                        URL.revokeObjectURL(preparedBlobUrl);
+                        preparedBlobUrl = null;
+                    }
+
                     downloadArea.classList.add('hidden');
+                    processingArea.classList.add('hidden');
+                    saveDiskArea.classList.add('hidden');
+                    recoveryAlert.classList.add('hidden'); // Hide recovery if discarded
                     noRecording.classList.remove('hidden');
+                    
+                    // Reset progress bars
+                    diskProgressContainer.classList.add('hidden');
+                    diskProgressBar.style.width = '0%';
+                    saveDiskBtn.classList.remove('hidden');
+                    saveDiskMsg.textContent = "File too large for auto-download.";
                 });
 
-                // REPLACED: Download link now handles export logic
-                downloadLink.addEventListener('click', handleDownload);
+                // NOTE: downloadLink no longer has a listener in 'Pre-stitch' mode,
+                // it acts as a direct link.
                 
                 // --- UI VISIBILITY LOGIC (HIERARCHY) ---
                 
@@ -1110,8 +1271,29 @@
                 } catch (err) {
                     console.error("Error starting screen share:", err);
                     
-                    if (err.toString().includes('permissions policy') || err.name === 'SecurityError') {
-                        showToast("Browser policy restricts sharing here. Please download file to use.", 'error');
+                    // DETECT IFRAME RESTRICTION: This error means we are inside a restricted iframe/preview
+                    if (err.message && (err.message.includes('permissions policy') || err.message.includes('display-capture'))) {
+                         showToast("Preview Mode Restricted: Download file to use.", 'error');
+                         
+                         // Force show download area to help user
+                         downloadArea.classList.remove('hidden');
+                         noRecording.classList.remove('hidden');
+                         
+                         // Update UI to explain the restriction
+                         const previewWrapper = $('#preview-wrapper');
+                         if(previewWrapper) {
+                             previewWrapper.innerHTML = `
+                                <div class="text-center p-8 text-red-500">
+                                    <i class="fas fa-ban text-6xl mb-4"></i>
+                                    <h3 class="text-xl font-bold mb-2">Browser Restriction</h3>
+                                    <p class="text-gray-600 dark:text-gray-400">
+                                        Screen recording is blocked inside this preview window.<br>
+                                        Please <b>download this HTML file</b> using the button in the top right<br>
+                                        and open it directly in your browser.
+                                    </p>
+                                </div>
+                             `;
+                         }
                     } else if (err.name !== 'NotAllowedError') {
                         showToast("Could not start screen sharing: " + err.message, 'error');
                     }
@@ -1153,6 +1335,9 @@
                 try {
                     // Initialize DB for new session
                     await VideoDB.clear();
+                    
+                    // Request Wake Lock
+                    await requestWakeLock();
                     
                     // 1. Get Audio Streams
                     // audioStream = null; // Removed, we use tracks directly now
@@ -1224,27 +1409,18 @@
                         }
                     };
 
-                    mediaRecorder.onstop = () => {
+                    mediaRecorder.onstop = async () => {
                         // Do NOT generate Blob here to avoid RAM crash.
                         // Just update state and UI.
                         
-                        downloadArea.classList.remove('hidden');
+                        // NEW: Switch to Processing Mode immediately
                         noRecording.classList.add('hidden');
-                        showToast('Recording saved to temporary storage', 'success');
+                        processingArea.classList.remove('hidden');
+                        
+                        showToast('Recording saved. Preparing download...', 'info');
 
                         // Cleanup tracks
-                        // NOTE: We only stop tracks created specifically for recording.
-                        // displayStream tracks are handled below if sharing stops (or we just keep sharing)
-                        // Actually, original behavior was to stop sharing tracks here too? 
-                        // Original code: if (displayStream) displayStream.getTracks().forEach(track => track.stop());
-                        
-                        // We should probably stop the recording-specific audio tracks (clones)
-                        // But mediaRecorder.stop() usually releases them.
-                        // Let's explicit stop combinedStream tracks
                         combinedStream.getTracks().forEach(track => track.stop());
-
-                        // Stop Audio Meter? NO, keep monitoring if checked.
-                        // stopAudioMeter(); 
 
                         videoPreview.srcObject = null;
                         
@@ -1257,6 +1433,9 @@
                         if (displayStream) displayStream.getTracks().forEach(track => track.stop());
                         
                         resetUI();
+                        
+                        // === TRIGGER BACKGROUND STITCHING ===
+                        await performBackgroundStitch();
                     };
                     
                     mediaRecorder.onerror = (e) => {
@@ -1281,77 +1460,121 @@
                     showToast("Failed to start recording: " + err.message, 'error');
                 }
             }
+            
+            // New Function: Auto-stitch at end
+            async function performBackgroundStitch() {
+                // Release Wake Lock (saving will have its own if needed, but for now release)
+                await releaseWakeLock();
 
-            // === Export / Download Logic ===
-            // This is where we handle the massive file extraction without crashing
-            async function handleDownload(e) {
-                // Prevent default anchor behavior
-                e.preventDefault();
+                // SAFETY CHECK: If file is massive (> 1GB), Force Disk Save
+                // 1GB is a safe threshold for Blob generation in older browsers/low RAM devices.
+                // 4-Hour 4K video will definitely hit this.
+                const RAM_LIMIT = 1024 * 1024 * 1024; // 1 GB
                 
-                showToast("Preparing download...", "info");
-                
-                // Determine extension
-                let fileExtension = 'webm';
-                if (lastMimeType.includes('mp4')) fileExtension = 'mp4';
-                const filename = `CaptureForge-Tutorial-${new Date().toISOString().replace(/:/g, '-').slice(0, 19)}.${fileExtension}`;
+                if (totalRecordedSize > RAM_LIMIT) {
+                    console.warn("File too large for RAM stitch. Forcing Disk Stream.");
+                    showToast("Large file detected. Switching to Disk Save...", "warning");
+                    
+                    // Hide processing, show "Save to Disk" button
+                    processingArea.classList.add('hidden');
+                    saveDiskArea.classList.remove('hidden');
+                    return; 
+                }
 
                 try {
-                    // STRATEGY A: Modern Stream to Disk (Chrome/Edge/Opera)
-                    if (window.showSaveFilePicker) {
-                        try {
-                            const handle = await window.showSaveFilePicker({
-                                suggestedName: filename,
-                                types: [{
-                                    description: 'Video File',
-                                    accept: { [lastMimeType.split(';')[0]]: [`.${fileExtension}`] }
-                                }],
-                            });
-                            
-                            const writable = await handle.createWritable();
-                            showToast("Saving... Do not close tab.", "info");
-                            
-                            // Pipe IDB -> File System
-                            await VideoDB.streamToToFile(writable);
-                            await writable.close();
-                            
-                            showToast("File saved successfully!", "success");
-                            return;
-                        } catch (pickerErr) {
-                            if (pickerErr.name === 'AbortError') {
-                                return; // User cancelled
-                            }
-                            console.warn("File System API failed, falling back to Blob...", pickerErr);
-                            // Fallthrough to Strategy B
-                        }
-                    }
-
-                    // STRATEGY B: Legacy Blob (Firefox/Safari)
-                    // Warning: Will crash RAM if > 2GB
-                    showToast("Generating download link...", "info");
+                    // determine extension
+                    let fileExtension = 'webm';
+                    if (lastMimeType.includes('mp4')) fileExtension = 'mp4';
+                    let filename = `CaptureForge-Tutorial-${new Date().toISOString().replace(/:/g, '-').slice(0, 19)}.${fileExtension}`;
                     
+                    // Stitch in memory
                     const blobs = await VideoDB.getAllBlobs();
                     const fullBlob = new Blob(blobs, { type: lastMimeType });
                     
-                    const url = URL.createObjectURL(fullBlob);
+                    // Create URL
+                    if (preparedBlobUrl) URL.revokeObjectURL(preparedBlobUrl);
+                    preparedBlobUrl = URL.createObjectURL(fullBlob);
                     
-                    // Create temporary link to trigger download
-                    const tempLink = document.createElement('a');
-                    tempLink.href = url;
-                    tempLink.download = filename;
-                    document.body.appendChild(tempLink);
-                    tempLink.click();
-                    document.body.removeChild(tempLink);
+                    // Update Button to be a direct link
+                    downloadLink.href = preparedBlobUrl;
+                    downloadLink.download = filename;
                     
-                    // Clean up URL after delay
-                    setTimeout(() => URL.revokeObjectURL(url), 1000);
+                    // Swap UI
+                    processingArea.classList.add('hidden');
+                    downloadArea.classList.remove('hidden');
+                    
+                    showToast("Video ready for download!", "success");
                     
                 } catch (err) {
-                    console.error("Download failed:", err);
-                    showToast("Failed to save file: " + err.message, 'error');
+                    console.error("Stitch failed:", err);
+                    showToast("Stitching failed: " + err.message, "error");
+                    processingArea.classList.add('hidden');
+                    
+                    // Fallback to disk save UI if RAM fails (e.g., unexpected OOM)
+                    saveDiskArea.classList.remove('hidden');
                 }
             }
-            // Typo fix in VideoDB call above, needs to match method name
-            VideoDB.streamToToFile = VideoDB.streamToFile; 
+
+            // New Function: Handle Disk Save (Pro/Stream Mode)
+            async function handleDiskSave() {
+                if (!window.showSaveFilePicker) {
+                    showToast("Your browser doesn't support direct disk saving.", "error");
+                    alert("Your browser cannot save this file size directly. Please use Chrome, Edge, or Opera.");
+                    return;
+                }
+                
+                // Re-request Wake Lock for the save operation
+                await requestWakeLock();
+
+                let fileExtension = 'webm';
+                if (lastMimeType.includes('mp4')) fileExtension = 'mp4';
+                let filename = `CaptureForge-4K-${new Date().toISOString().replace(/:/g, '-').slice(0, 19)}.${fileExtension}`;
+
+                try {
+                    const handle = await window.showSaveFilePicker({
+                        suggestedName: filename,
+                        types: [{
+                            description: 'Video File',
+                            accept: { [lastMimeType.split(';')[0]]: [`.${fileExtension}`] }
+                        }],
+                    });
+                    
+                    const writable = await handle.createWritable();
+                    showToast("Saving to disk... Do not close.", "info");
+                    
+                    // Disable button & Show Progress
+                    saveDiskBtn.classList.add('hidden');
+                    saveDiskMsg.textContent = "Writing file to disk... Please wait.";
+                    diskProgressContainer.classList.remove('hidden');
+                    diskProgressBar.style.width = '0%';
+                    
+                    // Pipe IDB -> File System (No RAM Crash)
+                    // Added progress callback
+                    await VideoDB.streamToFile(writable, (progress) => {
+                         diskProgressBar.style.width = `${progress}%`;
+                    });
+                    
+                    await writable.close();
+                    
+                    showToast("File saved successfully!", "success");
+                    
+                    // Reset UI
+                    saveDiskArea.classList.add('hidden');
+                    noRecording.classList.remove('hidden');
+                    
+                } catch (err) {
+                    if (err.name === 'AbortError') return;
+                    console.error("Disk save failed", err);
+                    showToast("Save failed: " + err.message, "error");
+                    
+                    // Restore button
+                    saveDiskBtn.classList.remove('hidden');
+                    diskProgressContainer.classList.add('hidden');
+                    saveDiskBtn.innerHTML = '<i class="fas fa-save"></i> <span>Retry Save</span>';
+                } finally {
+                    await releaseWakeLock();
+                }
+            }
 
             function togglePauseResume() {
                 if (!mediaRecorder) return;
@@ -1524,6 +1747,5 @@
             init();
         });
     </script>
-
 </body>
 </html>
