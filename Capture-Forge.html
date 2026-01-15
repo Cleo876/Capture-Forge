@@ -6,7 +6,7 @@
     <title>CaptureForge - Direct Edition</title>
     
     <script>
-        const TOOL_VERSION = '1.3.2';
+        const TOOL_VERSION = '1.9.0';
     </script>
     
     <!-- Tailwind CSS -->
@@ -98,20 +98,6 @@
         .recording-indicator {
             animation: pulse-red 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
         }
-
-        /* Mouse Highlight Circle (CSS implementation for preview only) */
-        #mouse-highlight {
-            position: fixed;
-            width: 40px;
-            height: 40px;
-            border: 2px solid rgba(255, 0, 0, 0.8);
-            background-color: rgba(255, 0, 0, 0.1);
-            border-radius: 50%;
-            pointer-events: none;
-            transform: translate(-50%, -50%);
-            z-index: 9999;
-            transition: width 0.1s, height 0.1s;
-        }
         
         /* Toast notifications */
         .toast {
@@ -133,6 +119,20 @@
         .toast.error { background-color: #EF4444; }
         .toast.warning { background-color: #F59E0B; }
         .toast.info { background-color: #3B82F6; }
+        
+        /* Audio Meter Animation */
+        #mic-level-bar {
+            transition: width 0.05s linear, background-color 0.1s;
+        }
+        
+        /* Countdown Overlay Animation */
+        @keyframes ping-slow {
+            0% { transform: scale(1); opacity: 1; }
+            75%, 100% { transform: scale(1.5); opacity: 0; }
+        }
+        .animate-ping-slow {
+            animation: ping-slow 1s cubic-bezier(0, 0, 0.2, 1) infinite;
+        }
         
         /* Responsive adjustments */
         @media (max-width: 768px) {
@@ -160,10 +160,15 @@
         }
     </script>
 </head>
-<body class="flex flex-col h-screen overflow-hidden">
+<body class="flex flex-col h-screen overflow-hidden relative">
 
     <!-- Toast Notifications -->
     <div id="toast-container"></div>
+
+    <!-- Countdown Overlay -->
+    <div id="countdown-overlay" class="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm hidden">
+        <div class="text-9xl font-bold text-white drop-shadow-lg" id="countdown-number">3</div>
+    </div>
 
     <!-- Splash Screen -->
     <div id="splash-screen" class="fixed inset-0 flex flex-col justify-center items-center z-50 bg-gray-100 dark:bg-gray-900">
@@ -174,6 +179,48 @@
             <div class="splash-logo">[CaptureForge]</div>
             <div class="text-sm font-semibold text-gray-400 tracking-widest uppercase mt-1">Direct Edition</div>
             <div id="splash-tagline" class="splash-tagline text-xl text-gray-500 dark:text-gray-400 opacity-0 mt-2">Share, Record, and Highlight.</div>
+        </div>
+    </div>
+    
+    <!-- Mini Player / Pop Out Template (Hidden by default) -->
+    <div id="mini-player-template" class="hidden">
+        <div class="bg-white dark:bg-gray-900 p-3 flex flex-col gap-3 h-full">
+            <!-- Header Row: Timer -->
+            <div class="flex items-center justify-between border-b border-gray-100 dark:border-gray-800 pb-2">
+                <div class="flex items-center gap-2">
+                    <span class="text-red-600 animate-pulse text-xs"><i class="fas fa-circle"></i></span>
+                    <span class="text-xl font-mono font-bold text-gray-900 dark:text-gray-100 mini-timer-display">00:00</span>
+                </div>
+                <div class="text-xs text-gray-400 font-semibold tracking-wider">REC</div>
+            </div>
+            
+            <!-- Controls Row -->
+            <div class="flex gap-2">
+                <button class="mini-pause-btn flex-1 bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 rounded-lg text-sm transition-colors">
+                    <i class="fas fa-pause mr-1"></i> Pause
+                </button>
+                <button class="mini-stop-btn flex-1 bg-gray-700 hover:bg-gray-800 text-white font-bold py-2 rounded-lg text-sm transition-colors">
+                    <i class="fas fa-stop mr-1"></i> Stop
+                </button>
+            </div>
+            
+            <!-- Accordion Video Preview -->
+            <div class="mini-video-section flex-grow flex flex-col">
+                <button class="mini-toggle-preview w-full text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 py-1 flex items-center justify-center gap-1 transition-colors">
+                    <span>Show Preview</span> <i class="fas fa-chevron-down transform transition-transform duration-200"></i>
+                </button>
+                <div class="mini-video-container hidden mt-2 rounded-lg overflow-hidden bg-black aspect-video relative flex-grow">
+                    <!-- Video will be injected here -->
+                    <div class="absolute inset-0 flex items-center justify-center text-gray-600">
+                        <i class="fas fa-video-slash"></i>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Return Button (Only shown if needed) -->
+            <button class="mini-return-btn w-full mt-auto text-[10px] text-gray-400 hover:text-red-500 uppercase tracking-widest text-center py-2 border-t border-gray-100 dark:border-gray-800">
+                Return to Tab
+            </button>
         </div>
     </div>
 
@@ -218,6 +265,13 @@
                             <i class="fas fa-circle"></i>
                             <span>Start Recording</span>
                         </button>
+                        
+                        <!-- New PiP Button -->
+                        <button id="pip-btn" class="w-full mt-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 px-4 rounded-lg flex items-center justify-center gap-2 transition-all text-sm hidden">
+                            <i class="fas fa-external-link-alt"></i>
+                            <span>Pop Out Controls</span>
+                        </button>
+
                         <button id="pause-resume-btn" class="w-full mt-2 bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2.5 px-4 rounded-lg flex items-center justify-center gap-2 transition-all text-sm hidden">
                             <i class="fas fa-pause"></i>
                             <span>Pause</span>
@@ -256,6 +310,13 @@
                                         </div>
                                     </label>
                                     
+                                    <!-- Visual Audio Meter (New Feature) -->
+                                    <div id="mic-meter-wrapper" class="hidden mt-1 mx-1">
+                                        <div class="h-1.5 w-full bg-gray-200 dark:bg-gray-600 rounded-full overflow-hidden">
+                                            <div id="mic-level-bar" class="h-full bg-green-500 w-0"></div>
+                                        </div>
+                                    </div>
+                                    
                                     <!-- Raw Audio Mode (Child of Microphone) -->
                                     <div id="raw-audio-container" class="hidden mt-2 ml-2 pl-2 border-l border-gray-300 dark:border-gray-600">
                                         <label class="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-750 rounded-lg">
@@ -285,14 +346,6 @@
 
                             </div>
 
-                            <!-- Mouse Highlight (Separate) -->
-                            <label class="flex items-center justify-between p-2 bg-gray-100 dark:bg-gray-700 rounded-lg mt-2">
-                                <span class="font-medium text-gray-900 dark:text-gray-100 text-sm">Highlight Mouse (Preview)</span>
-                                <div class="relative inline-flex items-center cursor-pointer">
-                                    <input type="checkbox" id="highlight-mouse" class="sr-only peer" checked>
-                                    <div class="w-9 h-5 bg-gray-300 dark:bg-gray-600 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
-                                </div>
-                            </label>
                         </div>
                     </div>
 
@@ -329,7 +382,8 @@
                         <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Your Recording</h3>
                         <div id="download-area" class="hidden text-center">
                             <p class="text-xs text-gray-600 dark:text-gray-400 mb-2">Your recording is ready!</p>
-                            <a id="download-link" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg flex items-center justify-center gap-2 transition-all text-sm mb-2">
+                            <!-- Note: Changed to button behavior for IDB saving, but keeping UI exactly as is -->
+                            <a id="download-link" class="cursor-pointer w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg flex items-center justify-center gap-2 transition-all text-sm mb-2">
                                 <i class="fas fa-download"></i>
                                 <span>Download Video</span>
                             </a>
@@ -364,13 +418,109 @@
             </div>
         </main>
         
-        <!-- Mouse Highlight Element (Visual only for user) -->
-        <div id="mouse-highlight" class="hidden"></div>
-
     </div>
 
     <script>
         document.addEventListener('DOMContentLoaded', () => {
+
+            // === IndexedDB Logic ===
+            // This handles infinite storage for hours of recording
+            const VideoDB = {
+                dbName: 'CaptureForgeDB',
+                storeName: 'chunks',
+                dbVersion: 1,
+                db: null,
+
+                async init() {
+                    return new Promise((resolve, reject) => {
+                        const request = indexedDB.open(this.dbName, this.dbVersion);
+                        
+                        request.onupgradeneeded = (e) => {
+                            const db = e.target.result;
+                            if (!db.objectStoreNames.contains(this.storeName)) {
+                                db.createObjectStore(this.storeName, { autoIncrement: true });
+                            }
+                        };
+                        
+                        request.onsuccess = (e) => {
+                            this.db = e.target.result;
+                            console.log("DB Initialized");
+                            resolve();
+                        };
+                        
+                        request.onerror = (e) => {
+                            console.error("DB Error", e);
+                            reject(e);
+                        };
+                    });
+                },
+
+                async clear() {
+                    return new Promise((resolve, reject) => {
+                        if (!this.db) return resolve();
+                        const transaction = this.db.transaction([this.storeName], 'readwrite');
+                        const store = transaction.objectStore(this.storeName);
+                        const request = store.clear();
+                        
+                        request.onsuccess = () => resolve();
+                        request.onerror = (e) => reject(e);
+                    });
+                },
+
+                async addChunk(chunk) {
+                    return new Promise((resolve, reject) => {
+                        // Don't save empty chunks
+                        if (!chunk || chunk.size === 0) return resolve();
+
+                        const transaction = this.db.transaction([this.storeName], 'readwrite');
+                        const store = transaction.objectStore(this.storeName);
+                        const request = store.add(chunk);
+                        
+                        request.onsuccess = () => resolve();
+                        request.onerror = (e) => reject(e);
+                    });
+                },
+
+                // Fallback for older browsers (loads everything into RAM)
+                async getAllBlobs() {
+                    return new Promise((resolve, reject) => {
+                        const transaction = this.db.transaction([this.storeName], 'readonly');
+                        const store = transaction.objectStore(this.storeName);
+                        const request = store.getAll();
+                        
+                        request.onsuccess = () => resolve(request.result);
+                        request.onerror = (e) => reject(e);
+                    });
+                },
+
+                // MODERN STREAMING (The "Magic" for hours of recording)
+                // Pipes data from Disk (IDB) -> Disk (File System) without RAM spike
+                async streamToFile(writableStream) {
+                    return new Promise((resolve, reject) => {
+                        const transaction = this.db.transaction([this.storeName], 'readonly');
+                        const store = transaction.objectStore(this.storeName);
+                        const cursorRequest = store.openCursor();
+                        
+                        cursorRequest.onsuccess = async (e) => {
+                            const cursor = e.target.result;
+                            if (cursor) {
+                                try {
+                                    // Write specific chunk directly to file stream
+                                    await writableStream.write(cursor.value);
+                                    cursor.continue();
+                                } catch (err) {
+                                    reject(err);
+                                }
+                            } else {
+                                // Done iterating
+                                resolve();
+                            }
+                        };
+                        
+                        cursorRequest.onerror = (e) => reject(e);
+                    });
+                }
+            };
             
             // === DOM Element Cache ===
             const $ = (selector) => document.querySelector(selector);
@@ -379,6 +529,8 @@
             // Modals & App Containers
             const splashScreen = $('#splash-screen');
             const appContainer = $('#app-container');
+            const countdownOverlay = $('#countdown-overlay');
+            const countdownNumber = $('#countdown-number');
             
             // Theme
             const themeToggle = $('#theme-toggle');
@@ -388,6 +540,7 @@
             // Buttons
             const startBtn = $('#start-btn');
             const startRecordingBtn = $('#start-recording-btn');
+            const pipBtn = $('#pip-btn'); // New PiP Button
             const pauseResumeBtn = $('#pause-resume-btn');
             const stopBtn = $('#stop-btn');
             const newRecordingBtn = $('#new-recording-btn');
@@ -397,13 +550,14 @@
             const audioSubOptions = $('#audio-sub-options'); // Container
             
             const includeMicCheck = $('#include-mic'); // Child 1
+            const micMeterWrapper = $('#mic-meter-wrapper'); // New Meter Wrapper
+            const micLevelBar = $('#mic-level-bar'); // New Meter Bar
             const rawAudioContainer = $('#raw-audio-container');
             const rawAudioCheck = $('#raw-audio-mode'); // Child 1.1
             
             const includeSysAudioCheck = $('#include-sys-audio'); // Child 2
             const sysAudioWarning = $('#sys-audio-warning');
             
-            const highlightMouseCheck = $('#highlight-mouse');
             const videoQualitySelect = $('#video-quality');
             const frameRateSelect = $('#frame-rate');
             
@@ -422,33 +576,48 @@
             const noRecording = $('#no-recording');
             const downloadLink = $('#download-link');
             
-            // Mouse Highlight
-            const mouseHighlight = $('#mouse-highlight');
+            // Mini Player Elements
+            const miniPlayerTemplate = $('#mini-player-template');
             
             // === State ===
             let isSharing = false;
             let isRecording = false;
             let isPaused = false;
             let mediaRecorder;
-            let recordedChunks = [];
+            let micStream = null; // Persistent Mic Stream
+            // let recordedChunks = []; // REPLACED BY IDB
             let displayStream; // Screen/tab stream
-            let audioStream; // Mic/tab audio stream
+            // audioStream removed in favor of direct track handling
             let timerInterval;
             let secondsElapsed = 0;
             let recordingStartTime = 0;
             // -- Optimization: Add running total --
             let totalRecordedSize = 0;
+            let lastMimeType = ''; // To remember type for saving
+            
+            // Audio Meter State
+            let audioContext;
+            let analyser;
+            let microphoneSource;
+            let meterRafId;
+
+            // PiP State
+            let pipWindow = null;
 
             // Browser capabilities
             const browserCapabilities = {
                 screenShare: !!navigator.mediaDevices?.getDisplayMedia,
                 mediaRecorder: !!window.MediaRecorder,
-                systemAudio: false
+                fileSystem: !!window.showSaveFilePicker,
+                documentPiP: 'documentPictureInPicture' in window
             };
 
             // === Initializers ===
 
             function init() {
+                // Initialize DB first
+                VideoDB.init().catch(e => console.error("Failed to init DB", e));
+
                 // Show splash screen, then fade out and show app
                 setTimeout(() => {
                     splashScreen.style.opacity = '0';
@@ -486,28 +655,24 @@
 
             function initButtons() {
                 startBtn.addEventListener('click', startSharing);
-                startRecordingBtn.addEventListener('click', startRecording);
+                startRecordingBtn.addEventListener('click', startRecordingWithCountdown);
                 pauseResumeBtn.addEventListener('click', togglePauseResume);
                 stopBtn.addEventListener('click', stopAll);
                 
-                newRecordingBtn.addEventListener('click', () => {
-                    // RESET RECORDED CHUNKS HERE, NOT IN RESETUI
-                    recordedChunks = [];
-                    totalRecordedSize = 0; // Reset running total
+                // PiP Toggle
+                pipBtn.addEventListener('click', toggleMiniPlayer);
+                
+                newRecordingBtn.addEventListener('click', async () => {
+                    await VideoDB.clear();
+                    totalRecordedSize = 0;
                     resetUI();
                     downloadArea.classList.add('hidden');
                     noRecording.classList.remove('hidden');
                 });
-                
-                highlightMouseCheck.addEventListener('change', () => {
-                    if (highlightMouseCheck.checked && isSharing) {
-                        document.addEventListener('mousemove', updateMousePos);
-                    } else {
-                        document.removeEventListener('mousemove', updateMousePos);
-                        mouseHighlight.classList.add('hidden');
-                    }
-                });
 
+                // REPLACED: Download link now handles export logic
+                downloadLink.addEventListener('click', handleDownload);
+                
                 // --- UI VISIBILITY LOGIC (HIERARCHY) ---
                 
                 // 1. Master Audio Toggle: Controls Sub-options Container
@@ -519,12 +684,21 @@
                     }
                 });
 
-                // 2. Mic Toggle: Controls Raw Audio Visibility
+                // 2. Mic Toggle: Controls Raw Audio Visibility & Meter & MONITORING
                 includeMicCheck.addEventListener('change', () => {
                     if (includeMicCheck.checked) {
                         rawAudioContainer.classList.remove('hidden');
+                        startMicMonitoring(); // ACTIVATE MONITOR
                     } else {
                         rawAudioContainer.classList.add('hidden');
+                        stopMicMonitoring(); // DEACTIVATE MONITOR
+                    }
+                });
+                
+                // 2.1 Raw Audio Toggle: Restart Monitoring
+                rawAudioCheck.addEventListener('change', () => {
+                    if (includeMicCheck.checked) {
+                        startMicMonitoring(); // Restart to apply constraints
                     }
                 });
                 
@@ -541,6 +715,9 @@
                 if (!includeAudioCheck.checked) audioSubOptions.classList.add('hidden');
                 if (!includeMicCheck.checked) rawAudioContainer.classList.add('hidden');
                 if (!includeSysAudioCheck.checked) sysAudioWarning.classList.add('hidden');
+                
+                // Always show PiP button now (handled by custom logic)
+                pipBtn.classList.remove('hidden');
 
                 // --- END UI VISIBILITY LOGIC ---
 
@@ -605,6 +782,281 @@
                     showToast('Your browser has limited video format support', 'warning');
                 }
             }
+            
+            // === Mini Player Logic (Document PiP ONLY) ===
+            
+            async function toggleMiniPlayer() {
+                if (!isSharing) {
+                    showToast("Start sharing first", "warning");
+                    return;
+                }
+
+                // Close if already open
+                if (pipWindow) {
+                    pipWindow.close();
+                    pipWindow = null;
+                    return;
+                }
+                
+                // Strict Check: Document PiP (Chrome/Edge 116+)
+                if (browserCapabilities.documentPiP) {
+                    try {
+                        pipWindow = await documentPictureInPicture.requestWindow({
+                            width: 320,
+                            height: 180, // Small default height
+                        });
+                        
+                        // Setup PiP Window Content
+                        setupMiniPlayerContent(pipWindow.document.body, pipWindow);
+                        
+                        // Copy Styles
+                        [...document.styleSheets].forEach((styleSheet) => {
+                            try {
+                                const cssRules = [...styleSheet.cssRules].map((rule) => rule.cssText).join('');
+                                const style = document.createElement('style');
+                                style.textContent = cssRules;
+                                pipWindow.document.head.appendChild(style);
+                            } catch (e) {
+                                const link = document.createElement('link');
+                                link.rel = 'stylesheet';
+                                link.type = styleSheet.type;
+                                link.media = styleSheet.media;
+                                link.href = styleSheet.href;
+                                pipWindow.document.head.appendChild(link);
+                            }
+                        });
+                        
+                        // Listen for close
+                        pipWindow.addEventListener("pagehide", () => {
+                            pipWindow = null;
+                            updateMainUIFromMini();
+                            pipBtn.innerHTML = '<i class="fas fa-external-link-alt"></i><span>Pop Out Controls</span>';
+                        });
+
+                        pipBtn.innerHTML = '<i class="fas fa-compress-arrows-alt"></i><span>Restore Controls</span>';
+                        
+                    } catch (err) {
+                        console.error("Doc PiP Error:", err);
+                        showToast("Failed to launch floating window.", "error");
+                    }
+                } 
+                else {
+                     // Browser not supported
+                     showToast("Floating controls require Chrome, Edge, or Opera.", "warning");
+                }
+            }
+            
+            function setupMiniPlayerContent(container, windowRef) {
+                // Clone template
+                const content = miniPlayerTemplate.firstElementChild.cloneNode(true);
+                container.innerHTML = '';
+                container.appendChild(content);
+                
+                // Setup styling for window body
+                container.classList.add(document.documentElement.classList.contains('dark') ? 'dark' : 'light');
+                if (document.documentElement.classList.contains('dark')) {
+                    container.classList.add('bg-gray-900', 'text-white');
+                }
+
+                // Bind Events in Mini Player
+                const pauseBtn = container.querySelector('.mini-pause-btn');
+                const stopBtn = container.querySelector('.mini-stop-btn');
+                const togglePreviewBtn = container.querySelector('.mini-toggle-preview');
+                const videoContainer = container.querySelector('.mini-video-container');
+                const returnBtn = container.querySelector('.mini-return-btn');
+                const timerDisplay = container.querySelector('.mini-timer-display');
+                
+                // Sync Initial State
+                updateMiniPlayerState(container);
+                timerDisplay.textContent = timerEl.textContent.replace('REC ', '');
+
+                // Event Listeners
+                pauseBtn.addEventListener('click', () => {
+                    togglePauseResume();
+                    updateMiniPlayerState(container);
+                });
+                
+                stopBtn.addEventListener('click', () => {
+                    stopAll();
+                    if (windowRef) windowRef.close();
+                });
+                
+                returnBtn.addEventListener('click', () => {
+                    if (windowRef) windowRef.close();
+                });
+                
+                togglePreviewBtn.addEventListener('click', () => {
+                    const isHidden = videoContainer.classList.contains('hidden');
+                    if (isHidden) {
+                        videoContainer.classList.remove('hidden');
+                        togglePreviewBtn.innerHTML = '<span>Hide Preview</span> <i class="fas fa-chevron-up"></i>';
+                        
+                        // Inject Video Stream
+                        if (!videoContainer.querySelector('video')) {
+                            const miniVideo = document.createElement('video');
+                            miniVideo.autoplay = true;
+                            miniVideo.muted = true;
+                            miniVideo.className = 'w-full h-full object-cover';
+                            miniVideo.srcObject = displayStream;
+                            videoContainer.appendChild(miniVideo);
+                        }
+                        
+                        // Resize Window if PiP
+                        if (windowRef) windowRef.resizeTo(320, 450);
+                    } else {
+                        videoContainer.classList.add('hidden');
+                        togglePreviewBtn.innerHTML = '<span>Show Preview</span> <i class="fas fa-chevron-down"></i>';
+                        // Resize Window if PiP
+                        if (windowRef) windowRef.resizeTo(320, 180);
+                    }
+                });
+            }
+
+            function updateMiniPlayerState(container) {
+                const pauseBtn = container.querySelector('.mini-pause-btn');
+                
+                if (isPaused) {
+                    pauseBtn.innerHTML = '<i class="fas fa-play mr-1"></i> Resume';
+                    pauseBtn.classList.remove('bg-yellow-500', 'hover:bg-yellow-600');
+                    pauseBtn.classList.add('bg-green-600', 'hover:bg-green-700');
+                } else {
+                    pauseBtn.innerHTML = '<i class="fas fa-pause mr-1"></i> Pause';
+                    pauseBtn.classList.add('bg-yellow-500', 'hover:bg-yellow-600');
+                    pauseBtn.classList.remove('bg-green-600', 'hover:bg-green-700');
+                }
+            }
+            
+            function updateMainUIFromMini() {
+                // Sync happened via shared state (isPaused, etc)
+                // Just refresh main UI text
+                 if (isPaused) {
+                    pauseResumeBtn.innerHTML = '<i class="fas fa-play"></i><span>Resume</span>';
+                } else {
+                    pauseResumeBtn.innerHTML = '<i class="fas fa-pause"></i><span>Pause</span>';
+                }
+            }
+
+            // === Audio Meter Logic ===
+            
+            // NEW: Mic Monitoring Functions
+            async function startMicMonitoring() {
+                // Stop any previous monitoring to avoid duplicates
+                stopMicMonitoring();
+
+                try {
+                    const useRawAudio = rawAudioCheck.checked;
+                    micStream = await navigator.mediaDevices.getUserMedia({
+                        audio: {
+                            echoCancellation: !useRawAudio,
+                            noiseSuppression: !useRawAudio,
+                            autoGainControl: !useRawAudio
+                        }
+                    });
+                    
+                    // Activate Meter immediately
+                    initAudioMeter(micStream);
+                    
+                } catch (err) {
+                    console.warn("Mic monitoring failed", err);
+                    showToast("Microphone access denied", "error");
+                    includeMicCheck.checked = false;
+                    rawAudioContainer.classList.add('hidden');
+                    micMeterWrapper.classList.add('hidden');
+                }
+            }
+
+            function stopMicMonitoring() {
+                if (micStream) {
+                    micStream.getTracks().forEach(t => t.stop());
+                    micStream = null;
+                }
+                stopAudioMeter();
+            }
+
+            function initAudioMeter(stream) {
+                // Only start if we have an audio track
+                if (!stream || stream.getAudioTracks().length === 0) return;
+                
+                // Clean up previous context if exists
+                stopAudioMeter();
+
+                try {
+                    // Create new AudioContext
+                    const AudioContext = window.AudioContext || window.webkitAudioContext;
+                    audioContext = new AudioContext();
+                    
+                    // Create analyser
+                    analyser = audioContext.createAnalyser();
+                    analyser.fftSize = 256; // Small size for simple volume check
+                    
+                    // Create source from the stream
+                    microphoneSource = audioContext.createMediaStreamSource(stream);
+                    microphoneSource.connect(analyser);
+                    
+                    // Show the meter UI
+                    micMeterWrapper.classList.remove('hidden');
+                    
+                    const dataArray = new Uint8Array(analyser.frequencyBinCount);
+                    
+                    const drawMeter = () => {
+                        // REMOVED CHECK: Allow metering even if not recording
+                        // if (!isRecording && !isPaused) return; 
+                        
+                        analyser.getByteFrequencyData(dataArray);
+                        
+                        // Calculate average volume
+                        let values = 0;
+                        const length = dataArray.length;
+                        for (let i = 0; i < length; i++) {
+                            values += dataArray[i];
+                        }
+                        const average = values / length;
+                        
+                        // Map average (0-255) to percentage width
+                        // Amplify slightly for visibility
+                        const volumePercent = Math.min(100, (average / 60) * 100); 
+                        
+                        micLevelBar.style.width = `${volumePercent}%`;
+                        
+                        // Color feedback based on level
+                        if (volumePercent > 90) {
+                            micLevelBar.classList.remove('bg-green-500', 'bg-yellow-500');
+                            micLevelBar.classList.add('bg-red-500');
+                        } else if (volumePercent > 70) {
+                             micLevelBar.classList.remove('bg-green-500', 'bg-red-500');
+                            micLevelBar.classList.add('bg-yellow-500');
+                        } else {
+                            micLevelBar.classList.remove('bg-red-500', 'bg-yellow-500');
+                            micLevelBar.classList.add('bg-green-500');
+                        }
+
+                        meterRafId = requestAnimationFrame(drawMeter);
+                    };
+                    
+                    drawMeter();
+                    
+                } catch (e) {
+                    console.warn("Audio meter setup failed", e);
+                }
+            }
+            
+            function stopAudioMeter() {
+                if (meterRafId) cancelAnimationFrame(meterRafId);
+                
+                // Hide UI
+                micMeterWrapper.classList.add('hidden');
+                micLevelBar.style.width = '0%';
+                
+                if (microphoneSource) {
+                    microphoneSource.disconnect();
+                    microphoneSource = null;
+                }
+                
+                if (audioContext && audioContext.state !== 'closed') {
+                    audioContext.close();
+                    audioContext = null;
+                }
+            }
 
             // === Core Logic ===
 
@@ -612,16 +1064,11 @@
                 try {
                     showToast('Select what you want to share', 'info');
                     
-                    // Get quality settings
                     const quality = videoQualitySelect.value;
                     const frameRate = parseInt(frameRateSelect.value);
                     const useRawAudio = rawAudioCheck.checked;
-                    
-                    // Determine if we want System Audio based on toggles
                     const captureSystemAudio = includeAudioCheck.checked && includeSysAudioCheck.checked;
                     
-                    // Configure constraints
-                    // NOTE: 'audio' here controls System Audio request in getDisplayMedia
                     const constraints = {
                         video: {
                             cursor: "always",
@@ -637,35 +1084,26 @@
                         } : false
                     };
 
-                    // Request screen share
                     displayStream = await navigator.mediaDevices.getDisplayMedia(constraints);
                     
-                    // Check if we actually got audio tracks (if requested)
                     const hasAudio = displayStream.getAudioTracks().length > 0;
                     if (captureSystemAudio && !hasAudio) {
-                        // User might have unchecked "Share audio" in browser picker
-                        // OR they chose Fullscreen on macOS
                         showToast('System audio was not captured. Did you select a Tab?', 'warning');
                     }
 
-                    // Handle if user stops sharing via browser UI
                     displayStream.getVideoTracks()[0].onended = stopAll;
                     
-                    // Update UI
                     isSharing = true;
                     startBtn.classList.add('hidden');
                     startRecordingBtn.classList.remove('hidden');
                     stopBtn.classList.remove('hidden');
+                    // Show PiP button
+                    pipBtn.classList.remove('hidden');
+                    
                     placeholderText.classList.add('hidden');
                     videoPreview.classList.remove('hidden');
                     
-                    // Set up preview video
                     videoPreview.srcObject = displayStream;
-                    
-                    // Start mouse tracking if enabled (Only for Preview now)
-                    if (highlightMouseCheck.checked) {
-                        document.addEventListener('mousemove', updateMousePos);
-                    }
                     
                     showToast('Screen sharing started', 'success');
 
@@ -680,70 +1118,73 @@
                 }
             }
 
-            async function startRecording() {
+            // NEW: Countdown Wrapper
+            async function startRecordingWithCountdown() {
                 if (!isSharing || !displayStream) {
                     showToast("Please start sharing your screen first.", 'warning');
                     return;
                 }
+
+                // Show Overlay
+                countdownOverlay.classList.remove('hidden');
                 
+                // 3
+                countdownNumber.textContent = "3";
+                countdownNumber.classList.add('animate-ping-slow');
+                
+                setTimeout(() => {
+                    // 2
+                    countdownNumber.textContent = "2";
+                    setTimeout(() => {
+                        // 1
+                        countdownNumber.textContent = "1";
+                        setTimeout(() => {
+                            // GO
+                            countdownOverlay.classList.add('hidden');
+                            countdownNumber.classList.remove('animate-ping-slow');
+                            // Actually Start
+                            startRecording();
+                        }, 1000);
+                    }, 1000);
+                }, 1000);
+            }
+
+            async function startRecording() {
                 try {
-                    // 1. Get Audio Streams based on user selection
-                    let audioStream = null;
+                    // Initialize DB for new session
+                    await VideoDB.clear();
+                    
+                    // 1. Get Audio Streams
+                    // audioStream = null; // Removed, we use tracks directly now
                     const audioTracks = [];
 
-                    // A. System audio (From Display Stream)
-                    // We check "Include Audio" master + "System Audio" child toggles
                     if (includeAudioCheck.checked && includeSysAudioCheck.checked && displayStream.getAudioTracks().length > 0) {
                         displayStream.getAudioTracks().forEach(track => audioTracks.push(track.clone()));
                     }
 
-                    // B. Microphone audio 
-                    // We check "Include Audio" master + "Microphone" child toggles
+                    // Use Persistent Mic Stream if active
                     if (includeAudioCheck.checked && includeMicCheck.checked) {
-                        try {
-                            const useRawAudio = rawAudioCheck.checked;
-                            const micStream = await navigator.mediaDevices.getUserMedia({
-                                audio: {
-                                    echoCancellation: !useRawAudio,
-                                    noiseSuppression: !useRawAudio,
-                                    autoGainControl: !useRawAudio,
-                                    sampleRate: 44100,
-                                    channelCount: 2
-                                }
-                            });
-                            micStream.getAudioTracks().forEach(track => audioTracks.push(track));
-                        } catch (audioErr) {
-                            console.warn('Microphone access failed:', audioErr);
-                            showToast('Microphone access failed', 'warning');
+                        // If we have a monitored stream, use it.
+                        // If not (edge case), try to get it.
+                        if (!micStream) {
+                             await startMicMonitoring();
+                        }
+                        
+                        if (micStream) {
+                             // Clone track for recording so we don't kill monitor on stop
+                             micStream.getAudioTracks().forEach(track => audioTracks.push(track.clone()));
                         }
                     }
 
-                    // Create combined audio stream if we have any audio tracks
-                    if (audioTracks.length > 0) {
-                        audioStream = new MediaStream(audioTracks);
-                    }
-                    
-                    // 2. DIRECT EDITION: Record directly from displayStream
+                    // Combine all
                     const combinedStream = new MediaStream();
+                    displayStream.getVideoTracks().forEach(track => combinedStream.addTrack(track));
+                    audioTracks.forEach(track => combinedStream.addTrack(track));
                     
-                    // Add video track from DIRECT stream (No Canvas)
-                    displayStream.getVideoTracks().forEach(track => {
-                        combinedStream.addTrack(track);
-                    });
-                    
-                    // Add audio if available
-                    if (audioStream) {
-                        audioStream.getAudioTracks().forEach(track => {
-                            combinedStream.addTrack(track);
-                        });
-                    }
-                    
-                    // 3. Setup MediaRecorder with reliable format
-                    recordedChunks = [];
-                    totalRecordedSize = 0; // Reset counter at start
+                    totalRecordedSize = 0;
                     
                     const mimeTypes = [
-                        'video/mp4;codecs=h264,aac',  // Force MP4 first
+                        'video/mp4;codecs=h264,aac',
                         'video/webm;codecs=vp9,opus',
                         'video/webm;codecs=vp8,opus',
                         'video/webm'
@@ -758,9 +1199,7 @@
                     }
                     
                     const options = selectedMimeType ? { mimeType: selectedMimeType } : {};
-                    
                     if (selectedMimeType.includes('video')) {
-                        // Dynamically pull bitrate at start of recording
                         options.videoBitsPerSecond = getVideoBitrate(videoQualitySelect.value);
                     }
                     
@@ -770,48 +1209,53 @@
                         console.warn("Preferred format failed, using default:", e);
                         mediaRecorder = new MediaRecorder(combinedStream);
                     }
+                    
+                    lastMimeType = mediaRecorder.mimeType;
 
-                    mediaRecorder.ondataavailable = (e) => {
+                    // === CORE CHANGE: Write to IndexedDB ===
+                    mediaRecorder.ondataavailable = async (e) => {
                         if (e.data.size > 0) {
-                            recordedChunks.push(e.data);
-                            // Optimization: Update running total instead of iterating full array
+                            // Write directly to Disk (via IDB)
+                            await VideoDB.addChunk(e.data);
+                            
+                            // Update running total
                             totalRecordedSize += e.data.size;
                             updateFileSize();
                         }
                     };
 
-                    // === Cleanup Handler ===
                     mediaRecorder.onstop = () => {
-                        // A. Generate and Download File
-                        let fileExtension = 'webm';
-                        if (mediaRecorder.mimeType.includes('mp4')) {
-                            fileExtension = 'mp4';
-                        }
-                        
-                        const blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType });
-                        const url = URL.createObjectURL(blob);
-                        downloadLink.href = url;
-                        
-                        const timestamp = new Date().toISOString().replace(/:/g, '-').slice(0, 19);
-                        downloadLink.download = `CaptureForge-Direct-${timestamp}.${fileExtension}`;
+                        // Do NOT generate Blob here to avoid RAM crash.
+                        // Just update state and UI.
                         
                         downloadArea.classList.remove('hidden');
                         noRecording.classList.add('hidden');
-                        showToast('Recording saved successfully', 'success');
+                        showToast('Recording saved to temporary storage', 'success');
 
-                        // B. Clean up tracks AFTER file is generated (Race Condition Fix)
-                        if (displayStream) {
-                            displayStream.getTracks().forEach(track => track.stop());
-                        }
+                        // Cleanup tracks
+                        // NOTE: We only stop tracks created specifically for recording.
+                        // displayStream tracks are handled below if sharing stops (or we just keep sharing)
+                        // Actually, original behavior was to stop sharing tracks here too? 
+                        // Original code: if (displayStream) displayStream.getTracks().forEach(track => track.stop());
+                        
+                        // We should probably stop the recording-specific audio tracks (clones)
+                        // But mediaRecorder.stop() usually releases them.
+                        // Let's explicit stop combinedStream tracks
+                        combinedStream.getTracks().forEach(track => track.stop());
 
-                        // Stop Audio tracks
-                        if (audioStream) {
-                            audioStream.getTracks().forEach(track => track.stop());
-                        }
+                        // Stop Audio Meter? NO, keep monitoring if checked.
+                        // stopAudioMeter(); 
 
-                        // Reset UI
                         videoPreview.srcObject = null;
+                        
+                        // Close PiP/Widget
+                        if (pipWindow) pipWindow.close();
+
                         isSharing = false;
+                        
+                        // Also stop display stream since isSharing is false
+                        if (displayStream) displayStream.getTracks().forEach(track => track.stop());
+                        
                         resetUI();
                     };
                     
@@ -820,9 +1264,8 @@
                         showToast('Recording error occurred', 'error');
                     };
                     
-                    // 4. Start Recording & UI Update
-                    // Optimization: Increase timeslice to reduce event frequency (1000 -> 2500)
-                    mediaRecorder.start(2500); 
+                    // 4. Start Recording
+                    mediaRecorder.start(2000); // 2 second chunks for safety
                     isRecording = true;
                     recordingStartTime = Date.now();
                     startRecordingBtn.classList.add('hidden');
@@ -831,13 +1274,84 @@
                     recordingStats.classList.remove('hidden');
                     startTimer();
                     
-                    showToast('Recording started (Direct Mode)', 'success');
+                    showToast('Recording started', 'success');
 
                 } catch (err) {
                     console.error("Error starting recording:", err);
                     showToast("Failed to start recording: " + err.message, 'error');
                 }
             }
+
+            // === Export / Download Logic ===
+            // This is where we handle the massive file extraction without crashing
+            async function handleDownload(e) {
+                // Prevent default anchor behavior
+                e.preventDefault();
+                
+                showToast("Preparing download...", "info");
+                
+                // Determine extension
+                let fileExtension = 'webm';
+                if (lastMimeType.includes('mp4')) fileExtension = 'mp4';
+                const filename = `CaptureForge-Tutorial-${new Date().toISOString().replace(/:/g, '-').slice(0, 19)}.${fileExtension}`;
+
+                try {
+                    // STRATEGY A: Modern Stream to Disk (Chrome/Edge/Opera)
+                    if (window.showSaveFilePicker) {
+                        try {
+                            const handle = await window.showSaveFilePicker({
+                                suggestedName: filename,
+                                types: [{
+                                    description: 'Video File',
+                                    accept: { [lastMimeType.split(';')[0]]: [`.${fileExtension}`] }
+                                }],
+                            });
+                            
+                            const writable = await handle.createWritable();
+                            showToast("Saving... Do not close tab.", "info");
+                            
+                            // Pipe IDB -> File System
+                            await VideoDB.streamToToFile(writable);
+                            await writable.close();
+                            
+                            showToast("File saved successfully!", "success");
+                            return;
+                        } catch (pickerErr) {
+                            if (pickerErr.name === 'AbortError') {
+                                return; // User cancelled
+                            }
+                            console.warn("File System API failed, falling back to Blob...", pickerErr);
+                            // Fallthrough to Strategy B
+                        }
+                    }
+
+                    // STRATEGY B: Legacy Blob (Firefox/Safari)
+                    // Warning: Will crash RAM if > 2GB
+                    showToast("Generating download link...", "info");
+                    
+                    const blobs = await VideoDB.getAllBlobs();
+                    const fullBlob = new Blob(blobs, { type: lastMimeType });
+                    
+                    const url = URL.createObjectURL(fullBlob);
+                    
+                    // Create temporary link to trigger download
+                    const tempLink = document.createElement('a');
+                    tempLink.href = url;
+                    tempLink.download = filename;
+                    document.body.appendChild(tempLink);
+                    tempLink.click();
+                    document.body.removeChild(tempLink);
+                    
+                    // Clean up URL after delay
+                    setTimeout(() => URL.revokeObjectURL(url), 1000);
+                    
+                } catch (err) {
+                    console.error("Download failed:", err);
+                    showToast("Failed to save file: " + err.message, 'error');
+                }
+            }
+            // Typo fix in VideoDB call above, needs to match method name
+            VideoDB.streamToToFile = VideoDB.streamToFile; 
 
             function togglePauseResume() {
                 if (!mediaRecorder) return;
@@ -855,22 +1369,21 @@
                 }
                 
                 isPaused = !isPaused;
+                
+                // Sync Mini Player State if open
+                if (pipWindow) updateMiniPlayerState(pipWindow.document.body);
             }
 
             function stopAll() {
-                // Case 1: If we are currently recording
                 if (isRecording && mediaRecorder && mediaRecorder.state !== 'inactive') {
-                    // Stop recorder and RETURN. 
-                    // Let mediaRecorder.onstop handle stream cleanup.
                     mediaRecorder.stop();
                     stopTimer();
                     isRecording = false;
                     isPaused = false;
-                    showToast('Processing recording...', 'info');
+                    showToast('Finalizing recording...', 'info');
                     return; 
                 }
 
-                // Case 2: We are NOT recording, just sharing screen
                 if (isSharing) {
                     if (displayStream) {
                         displayStream.getTracks().forEach(track => track.stop());
@@ -888,20 +1401,16 @@
                 startRecordingBtn.classList.add('hidden');
                 pauseResumeBtn.classList.add('hidden');
                 stopBtn.classList.add('hidden');
+                pipBtn.classList.add('hidden'); // Hide PiP on reset
+                
                 placeholderText.classList.remove('hidden');
                 videoPreview.classList.add('hidden');
                 recordingStatusEl.classList.add('hidden');
                 recordingStats.classList.add('hidden');
                 timerEl.textContent = 'REC 00:00';
                 
-                // Hide mouse highlight
-                mouseHighlight.classList.add('hidden');
-                document.removeEventListener('mousemove', updateMousePos);
-                
-                // Reset state
                 isPaused = false;
                 secondsElapsed = 0;
-                // REMOVED recordedChunks = [] from here to prevent premature clearing
             }
             
             // === Timer & File Size ===
@@ -924,7 +1433,14 @@
             function updateTimerDisplay() {
                 const minutes = Math.floor(secondsElapsed / 60).toString().padStart(2, '0');
                 const seconds = (secondsElapsed % 60).toString().padStart(2, '0');
-                timerEl.textContent = `REC ${minutes}:${seconds}`;
+                const timeStr = `${minutes}:${seconds}`;
+                timerEl.textContent = `REC ${timeStr}`;
+                
+                // Update Mini Player Timer(s) if active
+                if (pipWindow) {
+                    const piTimer = pipWindow.document.querySelector('.mini-timer-display');
+                    if (piTimer) piTimer.textContent = timeStr;
+                }
             }
 
             function updateRecordingTime() {
@@ -935,31 +1451,8 @@
             }
 
             function updateFileSize() {
-                // Optimization: Use pre-calculated total instead of reducing array
-                // const totalSize = recordedChunks.reduce((acc, chunk) => acc + chunk.size, 0);
                 const sizeInMB = (totalRecordedSize / (1024 * 1024)).toFixed(1);
                 fileSizeEl.textContent = `${sizeInMB} MB`;
-            }
-
-            // === Mouse Highlight (Preview Only) ===
-
-            function updateMousePos(e) {
-                // Optimization: Simple throttle to prevent excessive layout thrashing
-                if (window.mouseFrameRequested) return;
-                window.mouseFrameRequested = true;
-                
-                requestAnimationFrame(() => {
-                    const rect = previewWrapper.getBoundingClientRect();
-                    const x = e.clientX - rect.left;
-                    const y = e.clientY - rect.top;
-                    
-                    if (highlightMouseCheck.checked) {
-                        mouseHighlight.style.left = `${e.clientX}px`;
-                        mouseHighlight.style.top = `${e.clientY}px`;
-                        mouseHighlight.classList.remove('hidden');
-                    }
-                    window.mouseFrameRequested = false;
-                });
             }
             
             // === Utility Functions ===
@@ -979,27 +1472,27 @@
 
             function getQualityWidth(quality) {
                 switch(quality) {
-                    case 'high': return 3840; // 4K Ideal
-                    case 'medium': return 1920; // 1080p
-                    case 'low': return 1280; // 720p
+                    case 'high': return 3840; 
+                    case 'medium': return 1920; 
+                    case 'low': return 1280; 
                     default: return 1920;
                 }
             }
 
             function getQualityHeight(quality) {
                 switch(quality) {
-                    case 'high': return 2160; // 4K Ideal
-                    case 'medium': return 1080; // 1080p
-                    case 'low': return 720; // 720p
+                    case 'high': return 2160; 
+                    case 'medium': return 1080; 
+                    case 'low': return 720; 
                     default: return 1080;
                 }
             }
 
             function getVideoBitrate(quality) {
                 switch(quality) {
-                    case 'high': return 8000000; // Optimization: Reduced from 15Mbps to 8Mbps for stability
-                    case 'medium': return 4000000; // Optimization: Reduced to 4Mbps
-                    case 'low': return 1000000; // 1 Mbps
+                    case 'high': return 8000000; 
+                    case 'medium': return 4000000; 
+                    case 'low': return 1000000; 
                     default: return 4000000;
                 }
             }
@@ -1020,17 +1513,14 @@
                 toast.prepend(icon);
                 $('#toast-container').appendChild(toast);
                 
-                // Show toast
                 setTimeout(() => toast.classList.add('show'), 100);
                 
-                // Auto remove after 5 seconds
                 setTimeout(() => {
                     toast.classList.remove('show');
                     setTimeout(() => toast.remove(), 300);
                 }, 5000);
             }
 
-            // Let's go!
             init();
         });
     </script>
